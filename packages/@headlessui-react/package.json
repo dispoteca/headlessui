@@ -25,6 +25,7 @@
   "scripts": {
     "playground": "next dev",
     "playground:build": "next build",
+    "prepack": "tsdx build --name headlessui --format cjs,esm,umd --tsconfig ./tsconfig.tsdx.json",
     "prepublishOnly": "npm run build",
     "test": "../../scripts/test.sh",
     "build": "../../scripts/build.sh",

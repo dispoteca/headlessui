@@ -24,6 +24,7 @@
   "scripts": {
     "playground": "vite --config ./vite.config.js serve examples",
     "playground:build": "NODE_ENV=production vite build examples",
+    "prepack": "tsdx build --name headlessui --format cjs,esm,umd --tsconfig ./tsconfig.tsdx.json",
     "prepublishOnly": "npm run build",
     "build": "../../scripts/build.sh",
     "watch": "../../scripts/watch.sh",
