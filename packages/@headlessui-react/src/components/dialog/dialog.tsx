@@ -7,16 +7,15 @@ import React, {
   useMemo,
   useReducer,
   useRef,
+  useState,
 
   // Types
   ContextType,
   ElementType,
   MouseEvent as ReactMouseEvent,
-  KeyboardEvent as ReactKeyboardEvent,
   MutableRefObject,
   Ref,
   SyntheticEvent,
-  useState,
 } from 'react'
 
 import { Props } from '../../types'
@@ -218,6 +217,16 @@ let DialogRoot = forwardRefWithAs(function Dialog<
     close(event)
   })
 
+  // Handle `Escape` to close
+  useWindowEvent('keydown', event => {
+    if (event.key !== Keys.Escape) return
+    if (dialogState !== DialogStates.Open) return
+    if (hasNestedDialogs) return
+    event.preventDefault()
+    event.stopPropagation()
+    close(event)
+  })
+
   // Scroll lock
   useEffect(() => {
     if (dialogState !== DialogStates.Open) return
@@ -282,16 +291,6 @@ let DialogRoot = forwardRefWithAs(function Dialog<
     'aria-describedby': describedby,
     onClick(event: ReactMouseEvent) {
       event.stopPropagation()
-    },
-
-    // Handle `Escape` to close
-    onKeyDown(event: ReactKeyboardEvent) {
-      if (event.key !== Keys.Escape) return
-      if (dialogState !== DialogStates.Open) return
-      if (hasNestedDialogs) return
-      event.preventDefault()
-      event.stopPropagation()
-      close(event)
     },
   }
   let passthroughProps = rest

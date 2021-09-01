@@ -13,6 +13,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Nothing yet!
 
+## [@headlessui/react@v1.4.1] - 2021-08-30
+
+### Fixes
+
+- Only add `type=button` to real buttons ([#709](https://github.com/tailwindlabs/headlessui/pull/709))
+- Fix `escape` bug not closing Dialog after clicking in Dialog ([#754](https://github.com/tailwindlabs/headlessui/pull/754))
+- Use `console.warn` instead of throwing an error when there are no focusable elements ([#775](https://github.com/tailwindlabs/headlessui/pull/775))
+
+## [@headlessui/vue@v1.4.1] - 2021-08-30
+
+### Fixes
+
+- Only add `type=button` to real buttons ([#709](https://github.com/tailwindlabs/headlessui/pull/709))
+- Add Vue emit types ([#679](https://github.com/tailwindlabs/headlessui/pull/679), [#712](https://github.com/tailwindlabs/headlessui/pull/712))
+- Fix `escape` bug not closing Dialog after clicking in Dialog ([#754](https://github.com/tailwindlabs/headlessui/pull/754))
+- Use `console.warn` instead of throwing an error when there are no focusable elements ([#775](https://github.com/tailwindlabs/headlessui/pull/775))
+
 ## [@headlessui/react@v1.4.0] - 2021-07-29
 
 ### Added
@@ -267,8 +284,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Initial release
 
-[unreleased - react]: https://github.com/tailwindlabs/headlessui/compare/@headlessui/react@v1.4.0...HEAD
-[unreleased - vue]: https://github.com/tailwindlabs/headlessui/compare/@headlessui/vue@v1.4.0...HEAD
+[unreleased - react]: https://github.com/tailwindlabs/headlessui/compare/@headlessui/react@v1.4.1...HEAD
+[unreleased - vue]: https://github.com/tailwindlabs/headlessui/compare/@headlessui/vue@v1.4.1...HEAD
+[@headlessui/react@v1.4.1]: https://github.com/tailwindlabs/headlessui/compare/@headlessui/react@v1.4.0...@headlessui/react@v1.4.1
+[@headlessui/vue@v1.4.1]: https://github.com/tailwindlabs/headlessui/compare/@headlessui/vue@v1.4.0...@headlessui/vue@v1.4.1
 [@headlessui/react@v1.4.0]: https://github.com/tailwindlabs/headlessui/compare/@headlessui/react@v1.3.0...@headlessui/react@v1.4.0
 [@headlessui/vue@v1.4.0]: https://github.com/tailwindlabs/headlessui/compare/@headlessui/vue@v1.3.0...@headlessui/vue@v1.4.0
 [@headlessui/react@v1.3.0]: https://github.com/tailwindlabs/headlessui/compare/@headlessui/react@v1.2.0...@headlessui/react@v1.3.0
