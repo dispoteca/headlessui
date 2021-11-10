@@ -29,7 +29,8 @@
     "prepublishOnly": "npm run build",
     "test": "../../scripts/test.sh",
     "build": "../../scripts/build.sh",
-    "lint": "../../scripts/lint.sh"
+    "lint": "../../scripts/lint.sh",
+    "watch": "tsdx watch --name headlessui --format cjs,esm,umd --tsconfig ./tsconfig.tsdx.json"
   },
   "peerDependencies": {
     "react": "^16 || ^17 || ^18",
