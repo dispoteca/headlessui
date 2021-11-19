@@ -15,6 +15,7 @@ import React, {
   ElementType,
   KeyboardEvent as ReactKeyboardEvent,
   MouseEvent as ReactMouseEvent,
+  SyntheticEvent,
   MutableRefObject,
   Ref,
 } from 'react'
@@ -42,6 +43,7 @@ enum MenuStates {
 }
 
 type MenuItemDataRef = MutableRefObject<{ textValue?: string; disabled: boolean }>
+type ShouldClose = (event: Event | SyntheticEvent) => boolean
 
 interface StateDefinition {
   menuState: MenuStates
@@ -50,6 +52,7 @@ interface StateDefinition {
   items: { id: string; dataRef: MenuItemDataRef }[]
   searchQuery: string
   activeItemIndex: number | null
+  shouldClose: ShouldClose
 }
 
 enum ActionTypes {
@@ -61,6 +64,7 @@ enum ActionTypes {
   ClearSearch,
   RegisterItem,
   UnregisterItem,
+  SetShouldClose,
 }
 
 type Actions =
@@ -72,6 +76,7 @@ type Actions =
   | { type: ActionTypes.ClearSearch }
   | { type: ActionTypes.RegisterItem; id: string; dataRef: MenuItemDataRef }
   | { type: ActionTypes.UnregisterItem; id: string }
+  | { type: ActionTypes.SetShouldClose; shouldClose?: ShouldClose }
 
 let reducers: {
   [P in ActionTypes]: (
@@ -137,6 +142,10 @@ let reducers: {
       })(),
     }
   },
+  [ActionTypes.SetShouldClose]: (state, action) => ({
+    ...state,
+    shouldClose: action.shouldClose ?? (() => true),
+  }),
 }
 
 let MenuContext = createContext<[StateDefinition, Dispatch<Actions>] | null>(null)
@@ -163,9 +172,10 @@ interface MenuRenderPropArg {
   open: boolean
 }
 
-export function Menu<TTag extends ElementType = typeof DEFAULT_MENU_TAG>(
-  props: Props<TTag, MenuRenderPropArg>
-) {
+export function Menu<TTag extends ElementType = typeof DEFAULT_MENU_TAG>({
+  shouldClose,
+  ...rest
+}: Props<TTag, MenuRenderPropArg> & { shouldClose?: ShouldClose }) {
   let reducerBag = useReducer(stateReducer, {
     menuState: MenuStates.Closed,
     buttonRef: createRef(),
@@ -173,6 +183,7 @@ export function Menu<TTag extends ElementType = typeof DEFAULT_MENU_TAG>(
     items: [],
     searchQuery: '',
     activeItemIndex: null,
+    shouldClose: shouldClose ?? (() => true),
   } as StateDefinition)
   let [{ menuState, itemsRef, buttonRef }, dispatch] = reducerBag
 
@@ -185,11 +196,13 @@ export function Menu<TTag extends ElementType = typeof DEFAULT_MENU_TAG>(
     if (buttonRef.current?.contains(target)) return
     if (itemsRef.current?.contains(target)) return
 
-    dispatch({ type: ActionTypes.CloseMenu })
+    if (!shouldClose || shouldClose(event)) {
+      dispatch({ type: ActionTypes.CloseMenu })
 
-    if (!isFocusableElement(target, FocusableMode.Loose)) {
-      event.preventDefault()
-      buttonRef.current?.focus()
+      if (!isFocusableElement(target, FocusableMode.Loose)) {
+        event.preventDefault()
+        buttonRef.current?.focus()
+      }
     }
   })
 
@@ -205,7 +218,7 @@ export function Menu<TTag extends ElementType = typeof DEFAULT_MENU_TAG>(
           [MenuStates.Closed]: State.Closed,
         })}
       >
-        {render({ props, slot, defaultTag: DEFAULT_MENU_TAG, name: 'Menu' })}
+        {render({ props: rest, slot, defaultTag: DEFAULT_MENU_TAG, name: 'Menu' })}
       </OpenClosedProvider>
     </MenuContext.Provider>
   )
@@ -277,8 +290,10 @@ let Button = forwardRefWithAs(function Button<TTag extends ElementType = typeof 
       if (isDisabledReactIssue7711(event.currentTarget)) return event.preventDefault()
       if (props.disabled) return
       if (state.menuState === MenuStates.Open) {
-        dispatch({ type: ActionTypes.CloseMenu })
-        d.nextFrame(() => state.buttonRef.current?.focus({ preventScroll: true }))
+        if (state.shouldClose(event)) {
+          dispatch({ type: ActionTypes.CloseMenu })
+          d.nextFrame(() => state.buttonRef.current?.focus({ preventScroll: true }))
+        }
       } else {
         event.preventDefault()
         event.stopPropagation()
@@ -386,14 +401,16 @@ let Items = forwardRefWithAs(function Items<TTag extends ElementType = typeof DE
           }
         // When in type ahead mode, fallthrough
         case Keys.Enter:
-          event.preventDefault()
-          event.stopPropagation()
-          dispatch({ type: ActionTypes.CloseMenu })
-          if (state.activeItemIndex !== null) {
-            let { id } = state.items[state.activeItemIndex]
-            document.getElementById(id)?.click()
+          if (state.shouldClose(event)) {
+            event.preventDefault()
+            event.stopPropagation()
+            dispatch({ type: ActionTypes.CloseMenu })
+            if (state.activeItemIndex !== null) {
+              let { id } = state.items[state.activeItemIndex]
+              document.getElementById(id)?.click()
+            }
+            disposables().nextFrame(() => state.buttonRef.current?.focus({ preventScroll: true }))
           }
-          disposables().nextFrame(() => state.buttonRef.current?.focus({ preventScroll: true }))
           break
 
         case Keys.ArrowDown:
@@ -419,10 +436,12 @@ let Items = forwardRefWithAs(function Items<TTag extends ElementType = typeof DE
           return dispatch({ type: ActionTypes.GoToItem, focus: Focus.Last })
 
         case Keys.Escape:
-          event.preventDefault()
-          event.stopPropagation()
-          dispatch({ type: ActionTypes.CloseMenu })
-          disposables().nextFrame(() => state.buttonRef.current?.focus({ preventScroll: true }))
+          if (state.shouldClose(event)) {
+            event.preventDefault()
+            event.stopPropagation()
+            dispatch({ type: ActionTypes.CloseMenu })
+            disposables().nextFrame(() => state.buttonRef.current?.focus({ preventScroll: true }))
+          }
           break
 
         case Keys.Tab:
@@ -533,8 +552,10 @@ function Item<TTag extends ElementType = typeof DEFAULT_ITEM_TAG>(
   let handleClick = useCallback(
     (event: MouseEvent) => {
       if (disabled) return event.preventDefault()
-      dispatch({ type: ActionTypes.CloseMenu })
-      disposables().nextFrame(() => state.buttonRef.current?.focus({ preventScroll: true }))
+      if (state.shouldClose(event)) {
+        dispatch({ type: ActionTypes.CloseMenu })
+        disposables().nextFrame(() => state.buttonRef.current?.focus({ preventScroll: true }))
+      }
       if (onClick) return onClick(event)
     },
     [dispatch, state.buttonRef, disabled, onClick]
