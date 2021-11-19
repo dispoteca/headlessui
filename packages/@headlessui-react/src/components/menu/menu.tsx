@@ -142,10 +142,13 @@ let reducers: {
       })(),
     }
   },
-  [ActionTypes.SetShouldClose]: (state, action) => ({
-    ...state,
-    shouldClose: action.shouldClose ?? (() => true),
-  }),
+  [ActionTypes.SetShouldClose]: (state, action) => {
+    if (state.shouldClose === action.shouldClose) return state
+    return {
+      ...state,
+      shouldClose: action.shouldClose ?? (() => true),
+    }
+  },
 }
 
 let MenuContext = createContext<[StateDefinition, Dispatch<Actions>] | null>(null)
@@ -209,6 +212,10 @@ export function Menu<TTag extends ElementType = typeof DEFAULT_MENU_TAG>({
   let slot = useMemo<MenuRenderPropArg>(() => ({ open: menuState === MenuStates.Open }), [
     menuState,
   ])
+
+  useEffect(() => {
+    dispatch({ type: ActionTypes.SetShouldClose, shouldClose })
+  }, [shouldClose])
 
   return (
     <MenuContext.Provider value={reducerBag}>
