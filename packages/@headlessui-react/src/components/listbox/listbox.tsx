@@ -33,6 +33,7 @@ import { isFocusableElement, FocusableMode } from '../../utils/focus-management'
 import { useWindowEvent } from '../../hooks/use-window-event'
 import { useOpenClosed, State, OpenClosedProvider } from '../../internal/open-closed'
 import { useResolveButtonType } from '../../hooks/use-resolve-button-type'
+import { compareNumbers } from '../../utils/compare'
 
 export enum ListboxStates {
   Open,
@@ -42,6 +43,7 @@ export enum ListboxStates {
 type ListboxOptionDataRef = MutableRefObject<{
   textValue?: string
   disabled: boolean
+  ordinal?: number
   value: unknown
 }>
 
@@ -151,10 +153,19 @@ let reducers: {
     if (state.searchQuery === '') return state
     return { ...state, searchQuery: '' }
   },
-  [ListboxActionTypes.RegisterOption]: (state, action) => ({
-    ...state,
-    options: [...state.options, { id: action.id, dataRef: action.dataRef }],
-  }),
+  [ListboxActionTypes.RegisterOption]: (state, action) => {
+    let nextOptions = [...state.options, { id: action.id, dataRef: action.dataRef }]
+
+    if (action.dataRef.current.ordinal != null)
+      nextOptions.sort((a, b) =>
+        compareNumbers(a.dataRef.current.ordinal, b.dataRef.current.ordinal)
+      )
+
+    return {
+      ...state,
+      options: nextOptions,
+    }
+  },
   [ListboxActionTypes.UnregisterOption]: (state, action) => {
     let nextOptions = state.options.slice()
     let currentActiveOption =
@@ -162,7 +173,15 @@ let reducers: {
 
     let idx = nextOptions.findIndex(a => a.id === action.id)
 
-    if (idx !== -1) nextOptions.splice(idx, 1)
+    if (idx !== -1) {
+      let [prev] = nextOptions.splice(idx, 1)
+
+      if (prev.dataRef.current.ordinal != null) {
+        nextOptions.sort((a, b) =>
+          compareNumbers(a.dataRef.current.ordinal, b.dataRef.current.ordinal)
+        )
+      }
+    }
 
     return {
       ...state,
@@ -646,21 +665,25 @@ function Option<
 >(
   props: Props<TTag, OptionRenderPropArg, ListboxOptionPropsWeControl | 'value'> & {
     disabled?: boolean
+    ordinal?: number
     value: TType
   }
 ) {
-  let { disabled = false, value, ...passthroughProps } = props
+  let { disabled = false, ordinal, value, ...passthroughProps } = props
   let [state, dispatch] = useListboxContext([Listbox.name, Option.name].join('.'))
   let id = `headlessui-listbox-option-${useId()}`
   let active =
     state.activeOptionIndex !== null ? state.options[state.activeOptionIndex].id === id : false
   let selected = state.propsRef.current.value === value
 
-  let bag = useRef<ListboxOptionDataRef['current']>({ disabled, value })
+  let bag = useRef<ListboxOptionDataRef['current']>({ disabled, ordinal, value })
 
   useIsoMorphicEffect(() => {
     bag.current.disabled = disabled
   }, [bag, disabled])
+  useIsoMorphicEffect(() => {
+    bag.current.ordinal = ordinal
+  }, [bag, ordinal])
   useIsoMorphicEffect(() => {
     bag.current.value = value
   }, [bag, value])
