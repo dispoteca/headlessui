@@ -34,7 +34,7 @@ import { useWindowEvent } from '../../hooks/use-window-event'
 import { useOpenClosed, State, OpenClosedProvider } from '../../internal/open-closed'
 import { useResolveButtonType } from '../../hooks/use-resolve-button-type'
 
-enum ListboxStates {
+export enum ListboxStates {
   Open,
   Closed,
 }
@@ -50,7 +50,7 @@ interface StateDefinition {
 
   orientation: 'horizontal' | 'vertical'
 
-  propsRef: MutableRefObject<{ value: unknown; onChange(value: unknown): void }>
+  propsRef: MutableRefObject<{ autoFocus: boolean; value: unknown; onChange(value: unknown): void }>
   labelRef: MutableRefObject<HTMLLabelElement | null>
   buttonRef: MutableRefObject<HTMLButtonElement | null>
   optionsRef: MutableRefObject<HTMLUListElement | null>
@@ -61,7 +61,7 @@ interface StateDefinition {
   activeOptionIndex: number | null
 }
 
-enum ActionTypes {
+export enum ListboxActionTypes {
   OpenListbox,
   CloseListbox,
 
@@ -76,43 +76,43 @@ enum ActionTypes {
   UnregisterOption,
 }
 
-type Actions =
-  | { type: ActionTypes.CloseListbox }
-  | { type: ActionTypes.OpenListbox }
-  | { type: ActionTypes.SetDisabled; disabled: boolean }
-  | { type: ActionTypes.SetOrientation; orientation: StateDefinition['orientation'] }
-  | { type: ActionTypes.GoToOption; focus: Focus.Specific; id: string }
-  | { type: ActionTypes.GoToOption; focus: Exclude<Focus, Focus.Specific> }
-  | { type: ActionTypes.Search; value: string }
-  | { type: ActionTypes.ClearSearch }
-  | { type: ActionTypes.RegisterOption; id: string; dataRef: ListboxOptionDataRef }
-  | { type: ActionTypes.UnregisterOption; id: string }
+export type ListboxActions =
+  | { type: ListboxActionTypes.CloseListbox }
+  | { type: ListboxActionTypes.OpenListbox }
+  | { type: ListboxActionTypes.SetDisabled; disabled: boolean }
+  | { type: ListboxActionTypes.SetOrientation; orientation: StateDefinition['orientation'] }
+  | { type: ListboxActionTypes.GoToOption; focus: Focus.Specific; id: string }
+  | { type: ListboxActionTypes.GoToOption; focus: Exclude<Focus, Focus.Specific> }
+  | { type: ListboxActionTypes.Search; value: string }
+  | { type: ListboxActionTypes.ClearSearch }
+  | { type: ListboxActionTypes.RegisterOption; id: string; dataRef: ListboxOptionDataRef }
+  | { type: ListboxActionTypes.UnregisterOption; id: string }
 
 let reducers: {
-  [P in ActionTypes]: (
+  [P in ListboxActionTypes]: (
     state: StateDefinition,
-    action: Extract<Actions, { type: P }>
+    action: Extract<ListboxActions, { type: P }>
   ) => StateDefinition
 } = {
-  [ActionTypes.CloseListbox](state) {
+  [ListboxActionTypes.CloseListbox](state) {
     if (state.disabled) return state
     if (state.listboxState === ListboxStates.Closed) return state
     return { ...state, activeOptionIndex: null, listboxState: ListboxStates.Closed }
   },
-  [ActionTypes.OpenListbox](state) {
+  [ListboxActionTypes.OpenListbox](state) {
     if (state.disabled) return state
     if (state.listboxState === ListboxStates.Open) return state
     return { ...state, listboxState: ListboxStates.Open }
   },
-  [ActionTypes.SetDisabled](state, action) {
+  [ListboxActionTypes.SetDisabled](state, action) {
     if (state.disabled === action.disabled) return state
     return { ...state, disabled: action.disabled }
   },
-  [ActionTypes.SetOrientation](state, action) {
+  [ListboxActionTypes.SetOrientation](state, action) {
     if (state.orientation === action.orientation) return state
     return { ...state, orientation: action.orientation }
   },
-  [ActionTypes.GoToOption](state, action) {
+  [ListboxActionTypes.GoToOption](state, action) {
     if (state.disabled) return state
     if (state.listboxState === ListboxStates.Closed) return state
 
@@ -126,7 +126,7 @@ let reducers: {
     if (state.searchQuery === '' && state.activeOptionIndex === activeOptionIndex) return state
     return { ...state, searchQuery: '', activeOptionIndex }
   },
-  [ActionTypes.Search]: (state, action) => {
+  [ListboxActionTypes.Search]: (state, action) => {
     if (state.disabled) return state
     if (state.listboxState === ListboxStates.Closed) return state
 
@@ -140,17 +140,17 @@ let reducers: {
     if (match === -1 || match === state.activeOptionIndex) return { ...state, searchQuery }
     return { ...state, searchQuery, activeOptionIndex: match }
   },
-  [ActionTypes.ClearSearch](state) {
+  [ListboxActionTypes.ClearSearch](state) {
     if (state.disabled) return state
     if (state.listboxState === ListboxStates.Closed) return state
     if (state.searchQuery === '') return state
     return { ...state, searchQuery: '' }
   },
-  [ActionTypes.RegisterOption]: (state, action) => ({
+  [ListboxActionTypes.RegisterOption]: (state, action) => ({
     ...state,
     options: [...state.options, { id: action.id, dataRef: action.dataRef }],
   }),
-  [ActionTypes.UnregisterOption]: (state, action) => {
+  [ListboxActionTypes.UnregisterOption]: (state, action) => {
     let nextOptions = state.options.slice()
     let currentActiveOption =
       state.activeOptionIndex !== null ? nextOptions[state.activeOptionIndex] : null
@@ -174,20 +174,22 @@ let reducers: {
   },
 }
 
-let ListboxContext = createContext<[StateDefinition, Dispatch<Actions>] | null>(null)
+let ListboxContext = createContext<[StateDefinition, Dispatch<ListboxActions>] | null>(null)
 ListboxContext.displayName = 'ListboxContext'
 
-function useListboxContext(component: string) {
+export function useListboxContext(component?: string) {
   let context = useContext(ListboxContext)
   if (context === null) {
-    let err = new Error(`<${component} /> is missing a parent <${Listbox.name} /> component.`)
+    let err = new Error(
+      `<${component ?? 'Unknown'} /> is missing a parent <${Listbox.name} /> component.`
+    )
     if (Error.captureStackTrace) Error.captureStackTrace(err, useListboxContext)
     throw err
   }
   return context
 }
 
-function stateReducer(state: StateDefinition, action: Actions) {
+function stateReducer(state: StateDefinition, action: ListboxActions) {
   return match(action.type, reducers, state, action)
 }
 
@@ -201,18 +203,26 @@ interface ListboxRenderPropArg {
 
 export function Listbox<TTag extends ElementType = typeof DEFAULT_LISTBOX_TAG, TType = string>(
   props: Props<TTag, ListboxRenderPropArg, 'value' | 'onChange'> & {
+    autoFocus?: boolean
     value: TType
     onChange(value: TType): void
     disabled?: boolean
     horizontal?: boolean
   }
 ) {
-  let { value, onChange, disabled = false, horizontal = false, ...passThroughProps } = props
+  let {
+    autoFocus = true,
+    value,
+    onChange,
+    disabled = false,
+    horizontal = false,
+    ...passThroughProps
+  } = props
   const orientation = horizontal ? 'horizontal' : 'vertical'
 
   let reducerBag = useReducer(stateReducer, {
     listboxState: ListboxStates.Closed,
-    propsRef: { current: { value, onChange } },
+    propsRef: { current: { autoFocus, value, onChange } },
     labelRef: createRef(),
     buttonRef: createRef(),
     optionsRef: createRef(),
@@ -225,13 +235,18 @@ export function Listbox<TTag extends ElementType = typeof DEFAULT_LISTBOX_TAG, T
   let [{ listboxState, propsRef, optionsRef, buttonRef }, dispatch] = reducerBag
 
   useIsoMorphicEffect(() => {
+    propsRef.current.autoFocus = autoFocus
+  }, [autoFocus, propsRef])
+  useIsoMorphicEffect(() => {
     propsRef.current.value = value
   }, [value, propsRef])
   useIsoMorphicEffect(() => {
     propsRef.current.onChange = onChange
   }, [onChange, propsRef])
-  useIsoMorphicEffect(() => dispatch({ type: ActionTypes.SetDisabled, disabled }), [disabled])
-  useIsoMorphicEffect(() => dispatch({ type: ActionTypes.SetOrientation, orientation }), [
+  useIsoMorphicEffect(() => dispatch({ type: ListboxActionTypes.SetDisabled, disabled }), [
+    disabled,
+  ])
+  useIsoMorphicEffect(() => dispatch({ type: ListboxActionTypes.SetOrientation, orientation }), [
     orientation,
   ])
 
@@ -244,7 +259,7 @@ export function Listbox<TTag extends ElementType = typeof DEFAULT_LISTBOX_TAG, T
     if (buttonRef.current?.contains(target)) return
     if (optionsRef.current?.contains(target)) return
 
-    dispatch({ type: ActionTypes.CloseListbox })
+    dispatch({ type: ListboxActionTypes.CloseListbox })
 
     if (!isFocusableElement(target, FocusableMode.Loose)) {
       event.preventDefault()
@@ -313,19 +328,19 @@ let Button = forwardRefWithAs(function Button<TTag extends ElementType = typeof 
         case Keys.Enter:
         case Keys.ArrowDown:
           event.preventDefault()
-          dispatch({ type: ActionTypes.OpenListbox })
+          dispatch({ type: ListboxActionTypes.OpenListbox })
           d.nextFrame(() => {
             if (!state.propsRef.current.value)
-              dispatch({ type: ActionTypes.GoToOption, focus: Focus.First })
+              dispatch({ type: ListboxActionTypes.GoToOption, focus: Focus.First })
           })
           break
 
         case Keys.ArrowUp:
           event.preventDefault()
-          dispatch({ type: ActionTypes.OpenListbox })
+          dispatch({ type: ListboxActionTypes.OpenListbox })
           d.nextFrame(() => {
             if (!state.propsRef.current.value)
-              dispatch({ type: ActionTypes.GoToOption, focus: Focus.Last })
+              dispatch({ type: ListboxActionTypes.GoToOption, focus: Focus.Last })
           })
           break
       }
@@ -348,11 +363,11 @@ let Button = forwardRefWithAs(function Button<TTag extends ElementType = typeof 
     (event: ReactMouseEvent) => {
       if (isDisabledReactIssue7711(event.currentTarget)) return event.preventDefault()
       if (state.listboxState === ListboxStates.Open) {
-        dispatch({ type: ActionTypes.CloseListbox })
+        dispatch({ type: ListboxActionTypes.CloseListbox })
         d.nextFrame(() => state.buttonRef.current?.focus({ preventScroll: true }))
       } else {
         event.preventDefault()
-        dispatch({ type: ActionTypes.OpenListbox })
+        dispatch({ type: ListboxActionTypes.OpenListbox })
       }
     },
     [dispatch, d, state]
@@ -467,6 +482,7 @@ let Options = forwardRefWithAs(function Options<
     if (!container) return
     if (state.listboxState !== ListboxStates.Open) return
     if (container === document.activeElement) return
+    if (!state.propsRef.current.autoFocus) return
 
     container.focus({ preventScroll: true })
   }, [state.listboxState, state.optionsRef])
@@ -483,13 +499,13 @@ let Options = forwardRefWithAs(function Options<
           if (state.searchQuery !== '') {
             event.preventDefault()
             event.stopPropagation()
-            return dispatch({ type: ActionTypes.Search, value: event.key })
+            return dispatch({ type: ListboxActionTypes.Search, value: event.key })
           }
         // When in type ahead mode, fallthrough
         case Keys.Enter:
           event.preventDefault()
           event.stopPropagation()
-          dispatch({ type: ActionTypes.CloseListbox })
+          dispatch({ type: ListboxActionTypes.CloseListbox })
           if (state.activeOptionIndex !== null) {
             let { dataRef } = state.options[state.activeOptionIndex]
             state.propsRef.current.onChange(dataRef.current.value)
@@ -500,29 +516,29 @@ let Options = forwardRefWithAs(function Options<
         case match(state.orientation, { vertical: Keys.ArrowDown, horizontal: Keys.ArrowRight }):
           event.preventDefault()
           event.stopPropagation()
-          return dispatch({ type: ActionTypes.GoToOption, focus: Focus.Next })
+          return dispatch({ type: ListboxActionTypes.GoToOption, focus: Focus.Next })
 
         case match(state.orientation, { vertical: Keys.ArrowUp, horizontal: Keys.ArrowLeft }):
           event.preventDefault()
           event.stopPropagation()
-          return dispatch({ type: ActionTypes.GoToOption, focus: Focus.Previous })
+          return dispatch({ type: ListboxActionTypes.GoToOption, focus: Focus.Previous })
 
         case Keys.Home:
         case Keys.PageUp:
           event.preventDefault()
           event.stopPropagation()
-          return dispatch({ type: ActionTypes.GoToOption, focus: Focus.First })
+          return dispatch({ type: ListboxActionTypes.GoToOption, focus: Focus.First })
 
         case Keys.End:
         case Keys.PageDown:
           event.preventDefault()
           event.stopPropagation()
-          return dispatch({ type: ActionTypes.GoToOption, focus: Focus.Last })
+          return dispatch({ type: ListboxActionTypes.GoToOption, focus: Focus.Last })
 
         case Keys.Escape:
           event.preventDefault()
           event.stopPropagation()
-          dispatch({ type: ActionTypes.CloseListbox })
+          dispatch({ type: ListboxActionTypes.CloseListbox })
           return d.nextFrame(() => state.buttonRef.current?.focus({ preventScroll: true }))
 
         case Keys.Tab:
@@ -532,8 +548,11 @@ let Options = forwardRefWithAs(function Options<
 
         default:
           if (event.key.length === 1) {
-            dispatch({ type: ActionTypes.Search, value: event.key })
-            searchDisposables.setTimeout(() => dispatch({ type: ActionTypes.ClearSearch }), 350)
+            dispatch({ type: ListboxActionTypes.Search, value: event.key })
+            searchDisposables.setTimeout(
+              () => dispatch({ type: ListboxActionTypes.ClearSearch }),
+              350
+            )
           }
           break
       }
@@ -626,14 +645,15 @@ function Option<
   let select = useCallback(() => state.propsRef.current.onChange(value), [state.propsRef, value])
 
   useIsoMorphicEffect(() => {
-    dispatch({ type: ActionTypes.RegisterOption, id, dataRef: bag })
-    return () => dispatch({ type: ActionTypes.UnregisterOption, id })
+    dispatch({ type: ListboxActionTypes.RegisterOption, id, dataRef: bag })
+    return () => dispatch({ type: ListboxActionTypes.UnregisterOption, id })
   }, [bag, id])
 
   useIsoMorphicEffect(() => {
     if (state.listboxState !== ListboxStates.Open) return
     if (!selected) return
-    dispatch({ type: ActionTypes.GoToOption, focus: Focus.Specific, id })
+    dispatch({ type: ListboxActionTypes.GoToOption, focus: Focus.Specific, id })
+    if (!state.propsRef.current.autoFocus) return
     document.getElementById(id)?.focus?.()
   }, [state.listboxState])
 
@@ -649,27 +669,27 @@ function Option<
     (event: { preventDefault: Function }) => {
       if (disabled) return event.preventDefault()
       select()
-      dispatch({ type: ActionTypes.CloseListbox })
+      dispatch({ type: ListboxActionTypes.CloseListbox })
       disposables().nextFrame(() => state.buttonRef.current?.focus({ preventScroll: true }))
     },
     [dispatch, state.buttonRef, disabled, select]
   )
 
   let handleFocus = useCallback(() => {
-    if (disabled) return dispatch({ type: ActionTypes.GoToOption, focus: Focus.Nothing })
-    dispatch({ type: ActionTypes.GoToOption, focus: Focus.Specific, id })
+    if (disabled) return dispatch({ type: ListboxActionTypes.GoToOption, focus: Focus.Nothing })
+    dispatch({ type: ListboxActionTypes.GoToOption, focus: Focus.Specific, id })
   }, [disabled, id, dispatch])
 
   let handleMove = useCallback(() => {
     if (disabled) return
     if (active) return
-    dispatch({ type: ActionTypes.GoToOption, focus: Focus.Specific, id })
+    dispatch({ type: ListboxActionTypes.GoToOption, focus: Focus.Specific, id })
   }, [disabled, active, id, dispatch])
 
   let handleLeave = useCallback(() => {
     if (disabled) return
     if (!active) return
-    dispatch({ type: ActionTypes.GoToOption, focus: Focus.Nothing })
+    dispatch({ type: ListboxActionTypes.GoToOption, focus: Focus.Nothing })
   }, [disabled, active, dispatch])
 
   let slot = useMemo<OptionRenderPropArg>(() => ({ active, selected, disabled }), [
