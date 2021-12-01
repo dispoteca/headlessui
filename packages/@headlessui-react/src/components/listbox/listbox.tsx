@@ -50,7 +50,12 @@ interface StateDefinition {
 
   orientation: 'horizontal' | 'vertical'
 
-  propsRef: MutableRefObject<{ autoFocus: boolean; value: unknown; onChange(value: unknown): void }>
+  propsRef: MutableRefObject<{
+    autoFocus: boolean
+    value: unknown
+    onChange(value: unknown): void
+    onClose(state: StateDefinition, dispatch: Dispatch<ListboxActions>): void
+  }>
   labelRef: MutableRefObject<HTMLLabelElement | null>
   buttonRef: MutableRefObject<HTMLButtonElement | null>
   optionsRef: MutableRefObject<HTMLUListElement | null>
@@ -206,6 +211,7 @@ export function Listbox<TTag extends ElementType = typeof DEFAULT_LISTBOX_TAG, T
     autoFocus?: boolean
     value: TType
     onChange(value: TType): void
+    onClose?(state: StateDefinition, dispatch: Dispatch<ListboxActions>): void
     disabled?: boolean
     horizontal?: boolean
   }
@@ -214,15 +220,31 @@ export function Listbox<TTag extends ElementType = typeof DEFAULT_LISTBOX_TAG, T
     autoFocus = true,
     value,
     onChange,
+    onClose,
     disabled = false,
     horizontal = false,
     ...passThroughProps
   } = props
   const orientation = horizontal ? 'horizontal' : 'vertical'
 
+  let onCloseCallback = useCallback(
+    (state: StateDefinition, dispatch: Dispatch<ListboxActions>) => {
+      if (onClose != null) onClose(state, dispatch)
+      else state.buttonRef.current?.focus({ preventScroll: true })
+    },
+    [onClose]
+  )
+
   let reducerBag = useReducer(stateReducer, {
     listboxState: ListboxStates.Closed,
-    propsRef: { current: { autoFocus, value, onChange } },
+    propsRef: {
+      current: {
+        autoFocus,
+        value,
+        onChange,
+        onClose: onCloseCallback,
+      },
+    },
     labelRef: createRef(),
     buttonRef: createRef(),
     optionsRef: createRef(),
@@ -243,6 +265,9 @@ export function Listbox<TTag extends ElementType = typeof DEFAULT_LISTBOX_TAG, T
   useIsoMorphicEffect(() => {
     propsRef.current.onChange = onChange
   }, [onChange, propsRef])
+  useIsoMorphicEffect(() => {
+    propsRef.current.onClose = onCloseCallback
+  }, [onCloseCallback, propsRef])
   useIsoMorphicEffect(() => dispatch({ type: ListboxActionTypes.SetDisabled, disabled }), [
     disabled,
   ])
@@ -263,7 +288,7 @@ export function Listbox<TTag extends ElementType = typeof DEFAULT_LISTBOX_TAG, T
 
     if (!isFocusableElement(target, FocusableMode.Loose)) {
       event.preventDefault()
-      buttonRef.current?.focus()
+      propsRef.current.onClose(reducerBag[0], dispatch)
     }
   })
 
@@ -364,7 +389,7 @@ let Button = forwardRefWithAs(function Button<TTag extends ElementType = typeof 
       if (isDisabledReactIssue7711(event.currentTarget)) return event.preventDefault()
       if (state.listboxState === ListboxStates.Open) {
         dispatch({ type: ListboxActionTypes.CloseListbox })
-        d.nextFrame(() => state.buttonRef.current?.focus({ preventScroll: true }))
+        d.nextFrame(() => state.propsRef.current.onClose(state, dispatch))
       } else {
         event.preventDefault()
         dispatch({ type: ListboxActionTypes.OpenListbox })
@@ -417,11 +442,12 @@ type LabelPropsWeControl = 'id' | 'ref' | 'onClick'
 function Label<TTag extends ElementType = typeof DEFAULT_LABEL_TAG>(
   props: Props<TTag, LabelRenderPropArg, LabelPropsWeControl>
 ) {
-  let [state] = useListboxContext([Listbox.name, Label.name].join('.'))
+  let [state, dispatch] = useListboxContext([Listbox.name, Label.name].join('.'))
   let id = `headlessui-listbox-label-${useId()}`
 
-  let handleClick = useCallback(() => state.buttonRef.current?.focus({ preventScroll: true }), [
-    state.buttonRef,
+  let handleClick = useCallback(() => state.propsRef.current.onClose(state, dispatch), [
+    state,
+    dispatch,
   ])
 
   let slot = useMemo<LabelRenderPropArg>(
@@ -510,7 +536,7 @@ let Options = forwardRefWithAs(function Options<
             let { dataRef } = state.options[state.activeOptionIndex]
             state.propsRef.current.onChange(dataRef.current.value)
           }
-          disposables().nextFrame(() => state.buttonRef.current?.focus({ preventScroll: true }))
+          disposables().nextFrame(() => state.propsRef.current.onClose(state, dispatch))
           break
 
         case match(state.orientation, { vertical: Keys.ArrowDown, horizontal: Keys.ArrowRight }):
@@ -539,7 +565,7 @@ let Options = forwardRefWithAs(function Options<
           event.preventDefault()
           event.stopPropagation()
           dispatch({ type: ListboxActionTypes.CloseListbox })
-          return d.nextFrame(() => state.buttonRef.current?.focus({ preventScroll: true }))
+          return d.nextFrame(() => state.propsRef.current.onClose(state, dispatch))
 
         case Keys.Tab:
           event.preventDefault()
@@ -670,7 +696,7 @@ function Option<
       if (disabled) return event.preventDefault()
       select()
       dispatch({ type: ListboxActionTypes.CloseListbox })
-      disposables().nextFrame(() => state.buttonRef.current?.focus({ preventScroll: true }))
+      disposables().nextFrame(() => state.propsRef.current.onClose(state, dispatch))
     },
     [dispatch, state.buttonRef, disabled, select]
   )
