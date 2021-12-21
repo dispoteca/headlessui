@@ -37,7 +37,7 @@ import { useTreeWalker } from '../../hooks/use-tree-walker'
 import { useOpenClosed, State, OpenClosedProvider } from '../../internal/open-closed'
 import { useResolveButtonType } from '../../hooks/use-resolve-button-type'
 
-enum MenuStates {
+export enum MenuStates {
   Open,
   Closed,
 }
@@ -55,7 +55,7 @@ interface StateDefinition {
   shouldClose: ShouldClose
 }
 
-enum ActionTypes {
+enum MenuActionTypes {
   OpenMenu,
   CloseMenu,
 
@@ -67,32 +67,32 @@ enum ActionTypes {
   SetShouldClose,
 }
 
-type Actions =
-  | { type: ActionTypes.CloseMenu }
-  | { type: ActionTypes.OpenMenu }
-  | { type: ActionTypes.GoToItem; focus: Focus.Specific; id: string }
-  | { type: ActionTypes.GoToItem; focus: Exclude<Focus, Focus.Specific> }
-  | { type: ActionTypes.Search; value: string }
-  | { type: ActionTypes.ClearSearch }
-  | { type: ActionTypes.RegisterItem; id: string; dataRef: MenuItemDataRef }
-  | { type: ActionTypes.UnregisterItem; id: string }
-  | { type: ActionTypes.SetShouldClose; shouldClose?: ShouldClose }
+type MenuActions =
+  | { type: MenuActionTypes.CloseMenu }
+  | { type: MenuActionTypes.OpenMenu }
+  | { type: MenuActionTypes.GoToItem; focus: Focus.Specific; id: string }
+  | { type: MenuActionTypes.GoToItem; focus: Exclude<Focus, Focus.Specific> }
+  | { type: MenuActionTypes.Search; value: string }
+  | { type: MenuActionTypes.ClearSearch }
+  | { type: MenuActionTypes.RegisterItem; id: string; dataRef: MenuItemDataRef }
+  | { type: MenuActionTypes.UnregisterItem; id: string }
+  | { type: MenuActionTypes.SetShouldClose; shouldClose?: ShouldClose }
 
 let reducers: {
-  [P in ActionTypes]: (
+  [P in MenuActionTypes]: (
     state: StateDefinition,
-    action: Extract<Actions, { type: P }>
+    action: Extract<MenuActions, { type: P }>
   ) => StateDefinition
 } = {
-  [ActionTypes.CloseMenu](state) {
+  [MenuActionTypes.CloseMenu](state) {
     if (state.menuState === MenuStates.Closed) return state
     return { ...state, activeItemIndex: null, menuState: MenuStates.Closed }
   },
-  [ActionTypes.OpenMenu](state) {
+  [MenuActionTypes.OpenMenu](state) {
     if (state.menuState === MenuStates.Open) return state
     return { ...state, menuState: MenuStates.Open }
   },
-  [ActionTypes.GoToItem]: (state, action) => {
+  [MenuActionTypes.GoToItem]: (state, action) => {
     let activeItemIndex = calculateActiveIndex(action, {
       resolveItems: () => state.items,
       resolveActiveIndex: () => state.activeItemIndex,
@@ -103,7 +103,7 @@ let reducers: {
     if (state.searchQuery === '' && state.activeItemIndex === activeItemIndex) return state
     return { ...state, searchQuery: '', activeItemIndex }
   },
-  [ActionTypes.Search]: (state, action) => {
+  [MenuActionTypes.Search]: (state, action) => {
     let searchQuery = state.searchQuery + action.value.toLowerCase()
     let match = state.items.findIndex(
       item =>
@@ -113,15 +113,15 @@ let reducers: {
     if (match === -1 || match === state.activeItemIndex) return { ...state, searchQuery }
     return { ...state, searchQuery, activeItemIndex: match }
   },
-  [ActionTypes.ClearSearch](state) {
+  [MenuActionTypes.ClearSearch](state) {
     if (state.searchQuery === '') return state
     return { ...state, searchQuery: '' }
   },
-  [ActionTypes.RegisterItem]: (state, action) => ({
+  [MenuActionTypes.RegisterItem]: (state, action) => ({
     ...state,
     items: [...state.items, { id: action.id, dataRef: action.dataRef }],
   }),
-  [ActionTypes.UnregisterItem]: (state, action) => {
+  [MenuActionTypes.UnregisterItem]: (state, action) => {
     let nextItems = state.items.slice()
     let currentActiveItem = state.activeItemIndex !== null ? nextItems[state.activeItemIndex] : null
 
@@ -142,7 +142,7 @@ let reducers: {
       })(),
     }
   },
-  [ActionTypes.SetShouldClose]: (state, action) => {
+  [MenuActionTypes.SetShouldClose]: (state, action) => {
     if (state.shouldClose === action.shouldClose) return state
     return {
       ...state,
@@ -151,20 +151,22 @@ let reducers: {
   },
 }
 
-let MenuContext = createContext<[StateDefinition, Dispatch<Actions>] | null>(null)
+let MenuContext = createContext<[StateDefinition, Dispatch<MenuActions>] | null>(null)
 MenuContext.displayName = 'MenuContext'
 
-function useMenuContext(component: string) {
+export function useMenuContext(component?: string) {
   let context = useContext(MenuContext)
   if (context === null) {
-    let err = new Error(`<${component} /> is missing a parent <${Menu.name} /> component.`)
+    let err = new Error(
+      `<${component ?? 'Unknown'} /> is missing a parent <${Menu.name} /> component.`
+    )
     if (Error.captureStackTrace) Error.captureStackTrace(err, useMenuContext)
     throw err
   }
   return context
 }
 
-function stateReducer(state: StateDefinition, action: Actions) {
+function stateReducer(state: StateDefinition, action: MenuActions) {
   return match(action.type, reducers, state, action)
 }
 
@@ -200,7 +202,7 @@ export function Menu<TTag extends ElementType = typeof DEFAULT_MENU_TAG>({
     if (itemsRef.current?.contains(target)) return
 
     if (!shouldClose || shouldClose(event)) {
-      dispatch({ type: ActionTypes.CloseMenu })
+      dispatch({ type: MenuActionTypes.CloseMenu })
 
       if (!isFocusableElement(target, FocusableMode.Loose)) {
         event.preventDefault()
@@ -214,7 +216,7 @@ export function Menu<TTag extends ElementType = typeof DEFAULT_MENU_TAG>({
   ])
 
   useEffect(() => {
-    dispatch({ type: ActionTypes.SetShouldClose, shouldClose })
+    dispatch({ type: MenuActionTypes.SetShouldClose, shouldClose })
   }, [shouldClose])
 
   return (
@@ -266,15 +268,15 @@ let Button = forwardRefWithAs(function Button<TTag extends ElementType = typeof 
         case Keys.ArrowDown:
           event.preventDefault()
           event.stopPropagation()
-          dispatch({ type: ActionTypes.OpenMenu })
-          d.nextFrame(() => dispatch({ type: ActionTypes.GoToItem, focus: Focus.First }))
+          dispatch({ type: MenuActionTypes.OpenMenu })
+          d.nextFrame(() => dispatch({ type: MenuActionTypes.GoToItem, focus: Focus.First }))
           break
 
         case Keys.ArrowUp:
           event.preventDefault()
           event.stopPropagation()
-          dispatch({ type: ActionTypes.OpenMenu })
-          d.nextFrame(() => dispatch({ type: ActionTypes.GoToItem, focus: Focus.Last }))
+          dispatch({ type: MenuActionTypes.OpenMenu })
+          d.nextFrame(() => dispatch({ type: MenuActionTypes.GoToItem, focus: Focus.Last }))
           break
       }
     },
@@ -298,13 +300,13 @@ let Button = forwardRefWithAs(function Button<TTag extends ElementType = typeof 
       if (props.disabled) return
       if (state.menuState === MenuStates.Open) {
         if (state.shouldClose(event)) {
-          dispatch({ type: ActionTypes.CloseMenu })
+          dispatch({ type: MenuActionTypes.CloseMenu })
           d.nextFrame(() => state.buttonRef.current?.focus({ preventScroll: true }))
         }
       } else {
         event.preventDefault()
         event.stopPropagation()
-        dispatch({ type: ActionTypes.OpenMenu })
+        dispatch({ type: MenuActionTypes.OpenMenu })
       }
     },
     [dispatch, d, state, props.disabled]
@@ -404,14 +406,14 @@ let Items = forwardRefWithAs(function Items<TTag extends ElementType = typeof DE
           if (state.searchQuery !== '') {
             event.preventDefault()
             event.stopPropagation()
-            return dispatch({ type: ActionTypes.Search, value: event.key })
+            return dispatch({ type: MenuActionTypes.Search, value: event.key })
           }
         // When in type ahead mode, fallthrough
         case Keys.Enter:
           if (state.shouldClose(event)) {
             event.preventDefault()
             event.stopPropagation()
-            dispatch({ type: ActionTypes.CloseMenu })
+            dispatch({ type: MenuActionTypes.CloseMenu })
             if (state.activeItemIndex !== null) {
               let { id } = state.items[state.activeItemIndex]
               document.getElementById(id)?.click()
@@ -423,30 +425,30 @@ let Items = forwardRefWithAs(function Items<TTag extends ElementType = typeof DE
         case Keys.ArrowDown:
           event.preventDefault()
           event.stopPropagation()
-          return dispatch({ type: ActionTypes.GoToItem, focus: Focus.Next })
+          return dispatch({ type: MenuActionTypes.GoToItem, focus: Focus.Next })
 
         case Keys.ArrowUp:
           event.preventDefault()
           event.stopPropagation()
-          return dispatch({ type: ActionTypes.GoToItem, focus: Focus.Previous })
+          return dispatch({ type: MenuActionTypes.GoToItem, focus: Focus.Previous })
 
         case Keys.Home:
         case Keys.PageUp:
           event.preventDefault()
           event.stopPropagation()
-          return dispatch({ type: ActionTypes.GoToItem, focus: Focus.First })
+          return dispatch({ type: MenuActionTypes.GoToItem, focus: Focus.First })
 
         case Keys.End:
         case Keys.PageDown:
           event.preventDefault()
           event.stopPropagation()
-          return dispatch({ type: ActionTypes.GoToItem, focus: Focus.Last })
+          return dispatch({ type: MenuActionTypes.GoToItem, focus: Focus.Last })
 
         case Keys.Escape:
           if (state.shouldClose(event)) {
             event.preventDefault()
             event.stopPropagation()
-            dispatch({ type: ActionTypes.CloseMenu })
+            dispatch({ type: MenuActionTypes.CloseMenu })
             disposables().nextFrame(() => state.buttonRef.current?.focus({ preventScroll: true }))
           }
           break
@@ -458,8 +460,8 @@ let Items = forwardRefWithAs(function Items<TTag extends ElementType = typeof DE
 
         default:
           if (event.key.length === 1) {
-            dispatch({ type: ActionTypes.Search, value: event.key })
-            searchDisposables.setTimeout(() => dispatch({ type: ActionTypes.ClearSearch }), 350)
+            dispatch({ type: MenuActionTypes.Search, value: event.key })
+            searchDisposables.setTimeout(() => dispatch({ type: MenuActionTypes.ClearSearch }), 350)
           }
           break
       }
@@ -552,15 +554,15 @@ function Item<TTag extends ElementType = typeof DEFAULT_ITEM_TAG>(
   }, [bag, id])
 
   useIsoMorphicEffect(() => {
-    dispatch({ type: ActionTypes.RegisterItem, id, dataRef: bag })
-    return () => dispatch({ type: ActionTypes.UnregisterItem, id })
+    dispatch({ type: MenuActionTypes.RegisterItem, id, dataRef: bag })
+    return () => dispatch({ type: MenuActionTypes.UnregisterItem, id })
   }, [bag, id])
 
   let handleClick = useCallback(
     (event: MouseEvent) => {
       if (disabled) return event.preventDefault()
       if (state.shouldClose(event)) {
-        dispatch({ type: ActionTypes.CloseMenu })
+        dispatch({ type: MenuActionTypes.CloseMenu })
         disposables().nextFrame(() => state.buttonRef.current?.focus({ preventScroll: true }))
       }
       if (onClick) return onClick(event)
@@ -569,20 +571,20 @@ function Item<TTag extends ElementType = typeof DEFAULT_ITEM_TAG>(
   )
 
   let handleFocus = useCallback(() => {
-    if (disabled) return dispatch({ type: ActionTypes.GoToItem, focus: Focus.Nothing })
-    dispatch({ type: ActionTypes.GoToItem, focus: Focus.Specific, id })
+    if (disabled) return dispatch({ type: MenuActionTypes.GoToItem, focus: Focus.Nothing })
+    dispatch({ type: MenuActionTypes.GoToItem, focus: Focus.Specific, id })
   }, [disabled, id, dispatch])
 
   let handleMove = useCallback(() => {
     if (disabled) return
     if (active) return
-    dispatch({ type: ActionTypes.GoToItem, focus: Focus.Specific, id })
+    dispatch({ type: MenuActionTypes.GoToItem, focus: Focus.Specific, id })
   }, [disabled, active, id, dispatch])
 
   let handleLeave = useCallback(() => {
     if (disabled) return
     if (!active) return
-    dispatch({ type: ActionTypes.GoToItem, focus: Focus.Nothing })
+    dispatch({ type: MenuActionTypes.GoToItem, focus: Focus.Nothing })
   }, [disabled, active, dispatch])
 
   let slot = useMemo<ItemRenderPropArg>(() => ({ active, disabled }), [active, disabled])
