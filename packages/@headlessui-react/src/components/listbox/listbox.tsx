@@ -47,7 +47,7 @@ type ListboxOptionDataRef = MutableRefObject<{
   value: unknown
 }>
 
-interface StateDefinition {
+export interface ListboxStateDefinition {
   listboxState: ListboxStates
 
   orientation: 'horizontal' | 'vertical'
@@ -56,7 +56,7 @@ interface StateDefinition {
     autoFocus: boolean
     value: unknown
     onChange(value: unknown): void
-    onClose(state: StateDefinition, dispatch: Dispatch<ListboxActions>): void
+    onClose(state: ListboxStateDefinition, dispatch: Dispatch<ListboxActions>): void
   }>
   labelRef: MutableRefObject<HTMLLabelElement | null>
   buttonRef: MutableRefObject<HTMLButtonElement | null>
@@ -87,7 +87,7 @@ export type ListboxActions =
   | { type: ListboxActionTypes.CloseListbox }
   | { type: ListboxActionTypes.OpenListbox }
   | { type: ListboxActionTypes.SetDisabled; disabled: boolean }
-  | { type: ListboxActionTypes.SetOrientation; orientation: StateDefinition['orientation'] }
+  | { type: ListboxActionTypes.SetOrientation; orientation: ListboxStateDefinition['orientation'] }
   | { type: ListboxActionTypes.GoToOption; focus: Focus.Specific; id: string }
   | { type: ListboxActionTypes.GoToOption; focus: Exclude<Focus, Focus.Specific> }
   | { type: ListboxActionTypes.Search; value: string }
@@ -97,9 +97,9 @@ export type ListboxActions =
 
 let reducers: {
   [P in ListboxActionTypes]: (
-    state: StateDefinition,
+    state: ListboxStateDefinition,
     action: Extract<ListboxActions, { type: P }>
-  ) => StateDefinition
+  ) => ListboxStateDefinition
 } = {
   [ListboxActionTypes.CloseListbox](state) {
     if (state.disabled) return state
@@ -198,7 +198,7 @@ let reducers: {
   },
 }
 
-let ListboxContext = createContext<[StateDefinition, Dispatch<ListboxActions>] | null>(null)
+let ListboxContext = createContext<[ListboxStateDefinition, Dispatch<ListboxActions>] | null>(null)
 ListboxContext.displayName = 'ListboxContext'
 
 export function useListboxContext(component?: string) {
@@ -213,7 +213,7 @@ export function useListboxContext(component?: string) {
   return context
 }
 
-function stateReducer(state: StateDefinition, action: ListboxActions) {
+function stateReducer(state: ListboxStateDefinition, action: ListboxActions) {
   return match(action.type, reducers, state, action)
 }
 
@@ -230,7 +230,7 @@ export function Listbox<TTag extends ElementType = typeof DEFAULT_LISTBOX_TAG, T
     autoFocus?: boolean
     value: TType
     onChange(value: TType): void
-    onClose?(state: StateDefinition, dispatch: Dispatch<ListboxActions>): void
+    onClose?(state: ListboxStateDefinition, dispatch: Dispatch<ListboxActions>): void
     disabled?: boolean
     horizontal?: boolean
   }
@@ -247,7 +247,7 @@ export function Listbox<TTag extends ElementType = typeof DEFAULT_LISTBOX_TAG, T
   const orientation = horizontal ? 'horizontal' : 'vertical'
 
   let onCloseCallback = useCallback(
-    (state: StateDefinition, dispatch: Dispatch<ListboxActions>) => {
+    (state: ListboxStateDefinition, dispatch: Dispatch<ListboxActions>) => {
       if (onClose != null) onClose(state, dispatch)
       else state.buttonRef.current?.focus({ preventScroll: true })
     },
@@ -272,7 +272,7 @@ export function Listbox<TTag extends ElementType = typeof DEFAULT_LISTBOX_TAG, T
     options: [],
     searchQuery: '',
     activeOptionIndex: null,
-  } as StateDefinition)
+  } as ListboxStateDefinition)
   let [{ listboxState, propsRef, optionsRef, buttonRef }, dispatch] = reducerBag
 
   useIsoMorphicEffect(() => {
