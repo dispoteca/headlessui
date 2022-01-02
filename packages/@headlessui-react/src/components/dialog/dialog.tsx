@@ -25,7 +25,7 @@ import { useSyncRefs } from '../../hooks/use-sync-refs'
 import { Keys } from '../keyboard'
 import { isDisabledReactIssue7711 } from '../../utils/bugs'
 import { useId } from '../../hooks/use-id'
-import { useFocusTrap, Features as FocusTrapFeatures } from '../../hooks/use-focus-trap'
+import { useFocusTrap, FocusTrapFeatures } from '../../hooks/use-focus-trap'
 import { useInertOthers } from '../../hooks/use-inert-others'
 import { Portal } from '../../components/portal/portal'
 import { ForcePortalRoot } from '../../internal/portal-force-root'
@@ -110,13 +110,14 @@ let DialogRoot = forwardRefWithAs(function Dialog<
 >(
   props: Props<TTag, DialogRenderPropArg, DialogPropsWeControl> &
     PropsForFeatures<typeof DialogRenderFeatures> & {
+      focusTrapFeatures?: FocusTrapFeatures
+      initialFocus?: MutableRefObject<HTMLElement | null>
       open?: boolean
       onClose(value: boolean, event?: Event | SyntheticEvent): void
-      initialFocus?: MutableRefObject<HTMLElement | null>
     },
   ref: Ref<HTMLDivElement>
 ) {
-  let { open, onClose, initialFocus, ...rest } = props
+  let { focusTrapFeatures, initialFocus, open, onClose, ...rest } = props
   let [nestedDialogCount, setNestedDialogCount] = useState(0)
 
   let usesOpenClosedState = useOpenClosed()
@@ -194,16 +195,16 @@ let DialogRoot = forwardRefWithAs(function Dialog<
   // in between. We only care abou whether you are the top most one or not.
   let position = !hasNestedDialogs ? 'leaf' : 'parent'
 
-  useFocusTrap(
-    internalDialogRef,
-    enabled
+  if (focusTrapFeatures == null) {
+    focusTrapFeatures = enabled
       ? match(position, {
           parent: FocusTrapFeatures.RestoreFocus,
           leaf: FocusTrapFeatures.All,
         })
-      : FocusTrapFeatures.None,
-    { initialFocus, containers }
-  )
+      : FocusTrapFeatures.None
+  }
+
+  useFocusTrap(internalDialogRef, focusTrapFeatures, { initialFocus, containers })
   useInertOthers(internalDialogRef, hasNestedDialogs ? enabled : false)
 
   // Handle outside click

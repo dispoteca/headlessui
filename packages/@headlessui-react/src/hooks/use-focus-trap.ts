@@ -10,7 +10,7 @@ import { focusElement, focusIn, Focus, FocusResult } from '../utils/focus-manage
 import { useWindowEvent } from './use-window-event'
 import { useIsMounted } from './use-is-mounted'
 
-export enum Features {
+export enum FocusTrapFeatures {
   /** No features enabled for the `useFocusTrap` hook. */
   None = 1 << 0,
 
@@ -32,7 +32,7 @@ export enum Features {
 
 export function useFocusTrap(
   container: MutableRefObject<HTMLElement | null>,
-  features: Features = Features.All,
+  features: FocusTrapFeatures = FocusTrapFeatures.All,
   {
     initialFocus,
     containers,
@@ -47,8 +47,8 @@ export function useFocusTrap(
   let previousActiveElement = useRef<HTMLElement | null>(null)
   let mounted = useIsMounted()
 
-  let featuresRestoreFocus = Boolean(features & Features.RestoreFocus)
-  let featuresInitialFocus = Boolean(features & Features.InitialFocus)
+  let featuresRestoreFocus = Boolean(features & FocusTrapFeatures.RestoreFocus)
+  let featuresInitialFocus = Boolean(features & FocusTrapFeatures.InitialFocus)
 
   // Capture the currently focused element, before we enable the focus trap.
   useEffect(() => {
@@ -98,7 +98,7 @@ export function useFocusTrap(
 
   // Handle `Tab` & `Shift+Tab` keyboard events
   useWindowEvent('keydown', event => {
-    if (!(features & Features.TabLock)) return
+    if (!(features & FocusTrapFeatures.TabLock)) return
 
     if (!container.current) return
     if (event.key !== Keys.Tab) return
@@ -119,7 +119,7 @@ export function useFocusTrap(
   useWindowEvent(
     'focus',
     event => {
-      if (!(features & Features.FocusLock)) return
+      if (!(features & FocusTrapFeatures.FocusLock)) return
 
       let allContainers = new Set(containers?.current)
       allContainers.add(container)

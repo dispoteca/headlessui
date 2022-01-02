@@ -8,7 +8,7 @@ import {
 
 import { Props } from '../../types'
 import { render } from '../../utils/render'
-import { useFocusTrap, Features as FocusTrapFeatures } from '../../hooks/use-focus-trap'
+import { useFocusTrap, FocusTrapFeatures } from '../../hooks/use-focus-trap'
 import { useServerHandoffComplete } from '../../hooks/use-server-handoff-complete'
 
 let DEFAULT_FOCUS_TRAP_TAG = 'div' as const
