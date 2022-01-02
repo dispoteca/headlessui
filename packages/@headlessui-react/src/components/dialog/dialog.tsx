@@ -194,15 +194,16 @@ let DialogRoot = forwardRefWithAs(function Dialog<
   // If there are multiple dialogs, then you can be the root, the leaf or one
   // in between. We only care abou whether you are the top most one or not.
   let position = !hasNestedDialogs ? 'leaf' : 'parent'
+  focusTrapFeatures = focusTrapFeatures ?? FocusTrapFeatures.All
 
-  if (focusTrapFeatures == null) {
-    focusTrapFeatures = enabled
+  focusTrapFeatures =
+    focusTrapFeatures &
+    (enabled
       ? match(position, {
           parent: FocusTrapFeatures.RestoreFocus,
           leaf: FocusTrapFeatures.All,
         })
-      : FocusTrapFeatures.None
-  }
+      : FocusTrapFeatures.None)
 
   useFocusTrap(internalDialogRef, focusTrapFeatures, { initialFocus, containers })
   useInertOthers(internalDialogRef, hasNestedDialogs ? enabled : false)
