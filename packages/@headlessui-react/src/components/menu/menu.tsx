@@ -45,17 +45,20 @@ export enum MenuStates {
 type MenuItemDataRef = MutableRefObject<{ textValue?: string; disabled: boolean }>
 type ShouldClose = (event: Event | SyntheticEvent) => boolean
 
-interface StateDefinition {
+export interface MenuStateDefinition {
   menuState: MenuStates
   buttonRef: MutableRefObject<HTMLButtonElement | null>
   itemsRef: MutableRefObject<HTMLDivElement | null>
   items: { id: string; dataRef: MenuItemDataRef }[]
+  propsRef: MutableRefObject<{
+    onClose(state: MenuStateDefinition, dispatch: Dispatch<MenuActions>): void
+  }>
   searchQuery: string
   activeItemIndex: number | null
   shouldClose: ShouldClose
 }
 
-enum MenuActionTypes {
+export enum MenuActionTypes {
   OpenMenu,
   CloseMenu,
 
@@ -67,7 +70,7 @@ enum MenuActionTypes {
   SetShouldClose,
 }
 
-type MenuActions =
+export type MenuActions =
   | { type: MenuActionTypes.CloseMenu }
   | { type: MenuActionTypes.OpenMenu }
   | { type: MenuActionTypes.GoToItem; focus: Focus.Specific; id: string }
@@ -80,9 +83,9 @@ type MenuActions =
 
 let reducers: {
   [P in MenuActionTypes]: (
-    state: StateDefinition,
+    state: MenuStateDefinition,
     action: Extract<MenuActions, { type: P }>
-  ) => StateDefinition
+  ) => MenuStateDefinition
 } = {
   [MenuActionTypes.CloseMenu](state) {
     if (state.menuState === MenuStates.Closed) return state
@@ -151,7 +154,7 @@ let reducers: {
   },
 }
 
-let MenuContext = createContext<[StateDefinition, Dispatch<MenuActions>] | null>(null)
+let MenuContext = createContext<[MenuStateDefinition, Dispatch<MenuActions>] | null>(null)
 MenuContext.displayName = 'MenuContext'
 
 export function useMenuContext(component?: string) {
@@ -166,7 +169,7 @@ export function useMenuContext(component?: string) {
   return context
 }
 
-function stateReducer(state: StateDefinition, action: MenuActions) {
+function stateReducer(state: MenuStateDefinition, action: MenuActions) {
   return match(action.type, reducers, state, action)
 }
 
@@ -178,19 +181,38 @@ interface MenuRenderPropArg {
 }
 
 export function Menu<TTag extends ElementType = typeof DEFAULT_MENU_TAG>({
+  onClose,
   shouldClose,
   ...rest
-}: Props<TTag, MenuRenderPropArg> & { shouldClose?: ShouldClose }) {
+}: Props<TTag, MenuRenderPropArg> & {
+  onClose: (state: MenuStateDefinition, dispatch: Dispatch<MenuActions>) => void
+  shouldClose?: ShouldClose
+}) {
+  let d = useDisposables()
+
+  let onCloseCallback = useCallback(
+    (state: MenuStateDefinition, dispatch: Dispatch<MenuActions>) => {
+      if (onClose != null) onClose(state, dispatch)
+      else d.nextFrame(() => state.buttonRef.current?.focus({ preventScroll: true }))
+    },
+    [d, onClose]
+  )
+
   let reducerBag = useReducer(stateReducer, {
     menuState: MenuStates.Closed,
     buttonRef: createRef(),
     itemsRef: createRef(),
     items: [],
+    propsRef: { current: { onClose: onCloseCallback } },
     searchQuery: '',
     activeItemIndex: null,
     shouldClose: shouldClose ?? (() => true),
-  } as StateDefinition)
-  let [{ menuState, itemsRef, buttonRef }, dispatch] = reducerBag
+  } as MenuStateDefinition)
+  let [{ menuState, itemsRef, buttonRef, propsRef }, dispatch] = reducerBag
+
+  useIsoMorphicEffect(() => {
+    propsRef.current.onClose = onCloseCallback
+  }, [onCloseCallback, propsRef])
 
   // Handle outside click
   useWindowEvent('mousedown', event => {
@@ -206,7 +228,7 @@ export function Menu<TTag extends ElementType = typeof DEFAULT_MENU_TAG>({
 
       if (!isFocusableElement(target, FocusableMode.Loose)) {
         event.preventDefault()
-        buttonRef.current?.focus()
+        propsRef.current.onClose(reducerBag[0], reducerBag[1])
       }
     }
   })
@@ -301,7 +323,7 @@ let Button = forwardRefWithAs(function Button<TTag extends ElementType = typeof 
       if (state.menuState === MenuStates.Open) {
         if (state.shouldClose(event)) {
           dispatch({ type: MenuActionTypes.CloseMenu })
-          d.nextFrame(() => state.buttonRef.current?.focus({ preventScroll: true }))
+          state.propsRef.current.onClose(state, dispatch)
         }
       } else {
         event.preventDefault()
@@ -418,7 +440,7 @@ let Items = forwardRefWithAs(function Items<TTag extends ElementType = typeof DE
               let { id } = state.items[state.activeItemIndex]
               document.getElementById(id)?.click()
             }
-            disposables().nextFrame(() => state.buttonRef.current?.focus({ preventScroll: true }))
+            state.propsRef.current.onClose(state, dispatch)
           }
           break
 
@@ -449,7 +471,7 @@ let Items = forwardRefWithAs(function Items<TTag extends ElementType = typeof DE
             event.preventDefault()
             event.stopPropagation()
             dispatch({ type: MenuActionTypes.CloseMenu })
-            disposables().nextFrame(() => state.buttonRef.current?.focus({ preventScroll: true }))
+            state.propsRef.current.onClose(state, dispatch)
           }
           break
 
@@ -563,7 +585,7 @@ function Item<TTag extends ElementType = typeof DEFAULT_ITEM_TAG>(
       if (disabled) return event.preventDefault()
       if (state.shouldClose(event)) {
         dispatch({ type: MenuActionTypes.CloseMenu })
-        disposables().nextFrame(() => state.buttonRef.current?.focus({ preventScroll: true }))
+        state.propsRef.current.onClose(state, dispatch)
       }
       if (onClick) return onClick(event)
     },
