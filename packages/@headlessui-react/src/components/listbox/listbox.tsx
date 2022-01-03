@@ -113,7 +113,14 @@ let reducers: {
   },
   [ListboxActionTypes.SetDisabled](state, action) {
     if (state.disabled === action.disabled) return state
-    return { ...state, disabled: action.disabled }
+    state = { ...state, disabled: action.disabled }
+
+    if (action.disabled) {
+      state.activeOptionIndex = null
+      state.listboxState = ListboxStates.Closed
+    }
+
+    return state
   },
   [ListboxActionTypes.SetOrientation](state, action) {
     if (state.orientation === action.orientation) return state
