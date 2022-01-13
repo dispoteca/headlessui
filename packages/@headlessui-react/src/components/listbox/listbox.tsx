@@ -161,47 +161,67 @@ let reducers: {
     return { ...state, searchQuery: '' }
   },
   [ListboxActionTypes.RegisterOption]: (state, action) => {
-    let nextOptions = [...state.options, { id: action.id, dataRef: action.dataRef }]
+    let currentActiveOption =
+      state.activeOptionIndex !== null ? state.options[state.activeOptionIndex] : null
 
-    if (action.dataRef.current.ordinal != null)
+    let nextOptions = [...state.options, { id: action.id, dataRef: action.dataRef }]
+    let sorted = false
+
+    if (nextOptions.some(v => v.dataRef.current.ordinal != null)) {
       nextOptions.sort((a, b) =>
         compareNumbers(a.dataRef.current.ordinal, b.dataRef.current.ordinal)
       )
 
+      sorted = true
+    }
+
+    let nextActiveOptionIndex =
+      sorted && nextOptions.length > 0
+        ? 0
+        : currentActiveOption != null
+        ? nextOptions.indexOf(currentActiveOption)
+        : null
+
     return {
       ...state,
       options: nextOptions,
+      activeOptionIndex: nextActiveOptionIndex,
     }
   },
   [ListboxActionTypes.UnregisterOption]: (state, action) => {
     let nextOptions = state.options.slice()
-    let currentActiveOption =
-      state.activeOptionIndex !== null ? nextOptions[state.activeOptionIndex] : null
-
     let idx = nextOptions.findIndex(a => a.id === action.id)
 
-    if (idx !== -1) {
-      let [prev] = nextOptions.splice(idx, 1)
+    if (idx >= 0) {
+      let currentActiveOption =
+        state.activeOptionIndex !== null ? nextOptions[state.activeOptionIndex] : null
 
-      if (prev.dataRef.current.ordinal != null) {
+      nextOptions.splice(idx, 1)
+      let sorted = false
+
+      if (nextOptions.some(v => v.dataRef.current.ordinal != null)) {
         nextOptions.sort((a, b) =>
           compareNumbers(a.dataRef.current.ordinal, b.dataRef.current.ordinal)
         )
+
+        sorted = true
+      }
+
+      let nextActiveOptionIndex =
+        sorted && nextOptions.length > 0
+          ? 0
+          : idx !== state.activeOptionIndex && currentActiveOption != null
+          ? nextOptions.indexOf(currentActiveOption)
+          : null
+
+      state = {
+        ...state,
+        options: nextOptions,
+        activeOptionIndex: nextActiveOptionIndex,
       }
     }
 
-    return {
-      ...state,
-      options: nextOptions,
-      activeOptionIndex: (() => {
-        if (idx === state.activeOptionIndex) return null
-        if (currentActiveOption === null) return null
-
-        // If we removed the option before the actual active index, then it would be out of sync. To
-        // fix this, we will find the correct (new) index position.
-        return nextOptions.indexOf(currentActiveOption)
-      })(),
-    }
+    return state
   },
 }
 
