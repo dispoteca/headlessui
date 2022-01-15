@@ -13,12 +13,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Nothing yet!
 
+## [@headlessui/react@v1.4.3] - 2022-01-14
+
+### Fixes
+
+- Ensure portal root exists in the DOM ([#950](https://github.com/tailwindlabs/headlessui/pull/950))
+- Ensure correct DOM node order when performing focus actions ([#1038](https://github.com/tailwindlabs/headlessui/pull/1038))
+
+### Added
+
+- Allow for `Tab.Group` to be controllable ([#909](https://github.com/tailwindlabs/headlessui/pull/909), [#970](https://github.com/tailwindlabs/headlessui/pull/970))
+
+## [@headlessui/vue@v1.4.3] - 2022-01-14
+
+### Fixes
+
+- Fix missing key binding in examples ([#1036](https://github.com/tailwindlabs/headlessui/pull/1036), [#1006](https://github.com/tailwindlabs/headlessui/pull/1006))
+- Fix slice => splice typo in `Tabs` component ([#1037](https://github.com/tailwindlabs/headlessui/pull/1037), [#986](https://github.com/tailwindlabs/headlessui/pull/986))
+- Ensure correct DOM node order when performing focus actions ([#1038](https://github.com/tailwindlabs/headlessui/pull/1038))
+
+### Added
+
+- Allow for `TabGroup` to be controllable ([#909](https://github.com/tailwindlabs/headlessui/pull/909), [#970](https://github.com/tailwindlabs/headlessui/pull/970))
+
 ## [@headlessui/react@v1.4.2] - 2021-11-08
 
 ### Fixes
 
 - Stop the event from propagating in the `Popover` component ([#798](https://github.com/tailwindlabs/headlessui/pull/798))
-- Allow to click on elements inside a `Dialog.Overlay` ([#816](https://github.com/tailwindlabs/headlessui/pull/816))
+- Allow clicking on elements inside a `Dialog.Overlay` ([#816](https://github.com/tailwindlabs/headlessui/pull/816))
 - Ensure interactability with `Popover.Panel` contents when using the `static` prop ([#857](https://github.com/tailwindlabs/headlessui/pull/857))
 - Fix initial transition in `Transition` component ([#882](https://github.com/tailwindlabs/headlessui/pull/882))
 
@@ -27,7 +50,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixes
 
 - Stop the event from propagating in the `Popover` component ([#798](https://github.com/tailwindlabs/headlessui/pull/798))
-- Allow to click on elements inside a `DialogOverlay` ([#816](https://github.com/tailwindlabs/headlessui/pull/816))
+- Allow clicking on elements inside a `DialogOverlay` ([#816](https://github.com/tailwindlabs/headlessui/pull/816))
 - Fix SSR crash because of `useWindowEvent` ([#817](https://github.com/tailwindlabs/headlessui/pull/817))
 - Improve tree shaking ([#859](https://github.com/tailwindlabs/headlessui/pull/859))
 - Add `type="button"` to `Tabs` component ([#912](https://github.com/tailwindlabs/headlessui/pull/912))
@@ -266,20 +289,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [@headlessui/react@v0.2.0] - 2020-10-06
 
+### Added
+
 - Add `Listbox` component
 - Add `Switch` component
 
 ## [@headlessui/vue@v0.2.0] - 2020-10-06
+
+### Added
 
 - Add `Listbox` component
 - Add `Switch` component
 
 ## [@headlessui/react@v0.1.3] - 2020-09-29
 
+### Fixes
+
 - Fix outside click behaviour. If you had multiple menu's, when menu 1 is open, menu 2 is closed and you click on menu button 2 it will open both menu's. This is now fixed.
 - Ensure when using keyboard navigation we prevent the default behaviour.
 
 ## [@headlessui/vue@v0.1.3] - 2020-09-29
+
+### Fixes
 
 - Fix an issue where you couldn't click on menu items that were links.
 - Fix outside click behaviour. If you had multiple menu's, when menu 1 is open, menu 2 is closed and you click on menu button 2 it will open both menu's. This is now fixed.
@@ -287,24 +318,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [@headlessui/react@v0.1.2] - 2020-09-25
 
+### Added
+
 - Add tests for `onClick` handling that wasn't working properly in @headlessui/vue to ensure behavior stays the same in this library
+
+### Fixes
+
 - Don't pass `disabled` prop through to children, only add `aria-disabled`
 
 ## [@headlessui/vue@v0.1.2] - 2020-09-25
+
+### Fixes
 
 - Fix issue where button `MenuItem` instances didn't properly fire click events
 - Don't pass `disabled` prop through to children, only add `aria-disabled`
 
 ## [@headlessui/react@v0.1.1] - 2020-09-24
 
-- Initial release
+### Added
+
+- Everything!
 
 ## [@headlessui/vue@v0.1.1] - 2020-09-24
 
-- Initial release
+### Added
 
-[unreleased - react]: https://github.com/tailwindlabs/headlessui/compare/@headlessui/react@v1.4.2...HEAD
-[unreleased - vue]: https://github.com/tailwindlabs/headlessui/compare/@headlessui/vue@v1.4.2...HEAD
+- Everything!
+
+[unreleased - react]: https://github.com/tailwindlabs/headlessui/compare/@headlessui/react@v1.4.3...HEAD
+[unreleased - vue]: https://github.com/tailwindlabs/headlessui/compare/@headlessui/vue@v1.4.3...HEAD
+[@headlessui/react@v1.4.3]: https://github.com/tailwindlabs/headlessui/compare/@headlessui/react@v1.4.2...@headlessui/react@v1.4.3
+[@headlessui/vue@v1.4.3]: https://github.com/tailwindlabs/headlessui/compare/@headlessui/vue@v1.4.2...@headlessui/vue@v1.4.3
 [@headlessui/react@v1.4.2]: https://github.com/tailwindlabs/headlessui/compare/@headlessui/react@v1.4.1...@headlessui/react@v1.4.2
 [@headlessui/vue@v1.4.2]: https://github.com/tailwindlabs/headlessui/compare/@headlessui/vue@v1.4.1...@headlessui/vue@v1.4.2
 [@headlessui/react@v1.4.1]: https://github.com/tailwindlabs/headlessui/compare/@headlessui/react@v1.4.0...@headlessui/react@v1.4.1
