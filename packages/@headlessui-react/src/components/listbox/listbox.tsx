@@ -85,7 +85,7 @@ export enum ListboxActionTypes {
 
 export type ListboxActions =
   | { type: ListboxActionTypes.CloseListbox }
-  | { type: ListboxActionTypes.OpenListbox }
+  | { type: ListboxActionTypes.OpenListbox; enable?: boolean }
   | { type: ListboxActionTypes.SetDisabled; disabled: boolean }
   | { type: ListboxActionTypes.SetOrientation; orientation: ListboxStateDefinition['orientation'] }
   | { type: ListboxActionTypes.GoToOption; focus: Focus.Specific; id: string }
@@ -106,10 +106,14 @@ let reducers: {
     if (state.listboxState === ListboxStates.Closed) return state
     return { ...state, activeOptionIndex: null, listboxState: ListboxStates.Closed }
   },
-  [ListboxActionTypes.OpenListbox](state) {
-    if (state.disabled) return state
+  [ListboxActionTypes.OpenListbox](state, action) {
+    if (state.disabled && !action.enable) return state
     if (state.listboxState === ListboxStates.Open) return state
-    return { ...state, listboxState: ListboxStates.Open }
+    return {
+      ...state,
+      disabled: action.enable ? false : state.disabled,
+      listboxState: ListboxStates.Open,
+    }
   },
   [ListboxActionTypes.SetDisabled](state, action) {
     if (state.disabled === action.disabled) return state
