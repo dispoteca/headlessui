@@ -6,17 +6,18 @@ import * as HeadlessUI from './index'
  */
 it('should expose the correct components', () => {
   expect(Object.keys(HeadlessUI)).toEqual([
+    'Combobox',
     'Dialog',
     'Disclosure',
     'FocusTrap',
-    'ListboxStates',
-    'ListboxActionTypes',
     'useListboxContext',
     'Listbox',
-    'MenuStates',
-    'MenuActionTypes',
+    'ListboxStates',
+    'ListboxActionTypes',
     'useMenuContext',
     'Menu',
+    'MenuStates',
+    'MenuActionTypes',
     'Popover',
     'Portal',
     'RadioGroup',
@@ -24,11 +25,11 @@ it('should expose the correct components', () => {
     'Tab',
     'Transition',
     'useDisposables',
-    'FocusTrapFeatures',
     'useFocusTrap',
+    'FocusTrapFeatures',
     'useId',
     'useIsoMorphicEffect',
-    'Focus',
     'calculateActiveIndex',
+    'Focus',
   ])
 })

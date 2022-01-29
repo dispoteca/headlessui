@@ -5,13 +5,30 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased - React]
+## [Unreleased - @headlessui/react]
 
-- Nothing yet!
+### Fixed
 
-## [Unreleased - Vue]
+- Ensure correct order when conditionally rendering `Menu.Item`, `Listbox.Option` and `RadioGroup.Option` ([#1045](https://github.com/tailwindlabs/headlessui/pull/1045))
+- Improve controlled Tabs behaviour ([#1050](https://github.com/tailwindlabs/headlessui/pull/1050))
+- Improve typeahead search logic ([#1051](https://github.com/tailwindlabs/headlessui/pull/1051))
+- Improve overal codebase, use modern tech like `esbuild` and TypeScript 4! ([#1055](https://github.com/tailwindlabs/headlessui/pull/1055))
 
-- Nothing yet!
+### Added
+
+- Add `Combobox` component ([#1047](https://github.com/tailwindlabs/headlessui/pull/1047))
+
+## [Unreleased - @headlessui/vue]
+
+### Fixed
+
+- Ensure correct order when conditionally rendering `MenuItem`, `ListboxOption` and `RadioGroupOption` ([#1045](https://github.com/tailwindlabs/headlessui/pull/1045))
+- Improve typeahead search logic ([#1051](https://github.com/tailwindlabs/headlessui/pull/1051))
+- Improve overal codebase, use modern tech like `esbuild` and TypeScript 4! ([#1055](https://github.com/tailwindlabs/headlessui/pull/1055))
+
+### Added
+
+- Add `Combobox` component ([#1047](https://github.com/tailwindlabs/headlessui/pull/1047))
 
 ## [@headlessui/react@v1.4.3] - 2022-01-14
 
@@ -81,7 +98,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Add `aria-orientation` to `Listbox`, which swaps Up/Down with Left/Right keys ([#683](https://github.com/tailwindlabs/headlessui/pull/683))
 - Expose `close` function from the render prop for `Disclosure`, `Disclosure.Panel`, `Popover` and `Popover.Panel` ([#697](https://github.com/tailwindlabs/headlessui/pull/697))
 
-
 ## [@headlessui/vue@v1.4.0] - 2021-07-29
 
 ### Added
@@ -93,7 +109,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [@headlessui/react@v1.3.0] - 2021-06-21
 
-### Added 
+### Added
 
 - Ensure that you can use `Transition.Child` when using implicit Transitions ([#503](https://github.com/tailwindlabs/headlessui/pull/503))
 - Add new `entered` prop for `Transition` and `Transition.Child` components ([#504](https://github.com/tailwindlabs/headlessui/pull/504))
@@ -113,7 +129,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [@headlessui/vue@v1.3.0] - 2021-06-21
 
-### Added 
+### Added
 
 - Ensure that you can use `TransitionChild` when using implicit Transitions ([#503](https://github.com/tailwindlabs/headlessui/pull/503))
 - Add new `entered` prop for `Transition` and `TransitionChild` components ([#504](https://github.com/tailwindlabs/headlessui/pull/504))
@@ -127,7 +143,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [@headlessui/react@v1.2.0] - 2021-05-10
 
-### Added 
+### Added
 
 - Introduce Open/Closed state, to simplify component communication ([#466](https://github.com/tailwindlabs/headlessui/pull/466))
 
@@ -139,7 +155,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [@headlessui/vue@v1.2.0] - 2021-05-10
 
-### Added 
+### Added
 
 - Introduce Open/Closed state, to simplify component communication ([#466](https://github.com/tailwindlabs/headlessui/pull/466))
 
@@ -345,8 +361,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Everything!
 
-[unreleased - react]: https://github.com/tailwindlabs/headlessui/compare/@headlessui/react@v1.4.3...HEAD
-[unreleased - vue]: https://github.com/tailwindlabs/headlessui/compare/@headlessui/vue@v1.4.3...HEAD
+[unreleased - @headlessui/react]: https://github.com/tailwindlabs/headlessui/compare/@headlessui/react@v1.4.3...HEAD
+[unreleased - @headlessui/vue]: https://github.com/tailwindlabs/headlessui/compare/@headlessui/vue@v1.4.3...HEAD
 [@headlessui/react@v1.4.3]: https://github.com/tailwindlabs/headlessui/compare/@headlessui/react@v1.4.2...@headlessui/react@v1.4.3
 [@headlessui/vue@v1.4.3]: https://github.com/tailwindlabs/headlessui/compare/@headlessui/vue@v1.4.2...@headlessui/vue@v1.4.3
 [@headlessui/react@v1.4.2]: https://github.com/tailwindlabs/headlessui/compare/@headlessui/react@v1.4.1...@headlessui/react@v1.4.2

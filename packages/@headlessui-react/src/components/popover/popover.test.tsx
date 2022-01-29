@@ -1,5 +1,5 @@
 import React, { createElement, useEffect, useRef } from 'react'
-import { render, screen } from '@testing-library/react'
+import { render } from '@testing-library/react'
 
 import { Popover } from './popover'
 import { suppressConsoleLogs } from '../../test-utils/suppress-console-logs'
@@ -23,7 +23,7 @@ jest.mock('../../hooks/use-id')
 afterAll(() => jest.restoreAllMocks())
 
 function nextFrame() {
-  return new Promise<void>(resolve => {
+  return new Promise<void>((resolve) => {
     requestAnimationFrame(() => {
       requestAnimationFrame(() => {
         resolve()

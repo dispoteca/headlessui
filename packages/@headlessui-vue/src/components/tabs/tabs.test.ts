@@ -1,4 +1,4 @@
-import { defineComponent, nextTick, ref } from 'vue'
+import { ComponentOptionsWithoutProps, defineComponent, nextTick, ref } from 'vue'
 import { render } from '../../test-utils/vue-testing-library'
 import { TabGroup, TabList, Tab, TabPanels, TabPanel } from './tabs'
 import { suppressConsoleLogs } from '../../test-utils/suppress-console-logs'
@@ -20,7 +20,7 @@ beforeAll(() => {
 
 afterAll(() => jest.restoreAllMocks())
 
-function renderTemplate(input: string | Partial<Parameters<typeof defineComponent>[0]>) {
+function renderTemplate(input: string | ComponentOptionsWithoutProps) {
   let defaultComponents = { TabGroup, TabList, Tab, TabPanels, TabPanel }
 
   if (typeof input === 'string') {
@@ -579,6 +579,12 @@ describe('`selectedIndex`', () => {
     // test controlled behaviour
     await click(getByText('setSelectedIndex'))
     assertTabs({ active: 2 })
+
+    // test uncontrolled behaviour again
+    await click(getByText('Tab 2'))
+    expect(handleChange).toHaveBeenCalledTimes(2)
+    expect(handleChange).toHaveBeenNthCalledWith(2, 1)
+    assertTabs({ active: 1 })
   })
 
   it('should jump to the nearest tab when the selectedIndex is out of bounds (-2)', async () => {

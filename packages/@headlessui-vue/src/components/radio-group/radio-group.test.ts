@@ -1,4 +1,4 @@
-import { defineComponent, nextTick, ref, watch } from 'vue'
+import { defineComponent, nextTick, ref, watch, reactive, ComponentOptionsWithoutProps } from 'vue'
 import { render } from '../../test-utils/vue-testing-library'
 
 import { RadioGroup, RadioGroupOption, RadioGroupLabel, RadioGroupDescription } from './radio-group'
@@ -24,7 +24,17 @@ beforeAll(() => {
 
 afterAll(() => jest.restoreAllMocks())
 
-function renderTemplate(input: string | Partial<Parameters<typeof defineComponent>[0]>) {
+function nextFrame() {
+  return new Promise<void>((resolve) => {
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        resolve()
+      })
+    })
+  })
+}
+
+function renderTemplate(input: string | ComponentOptionsWithoutProps) {
   let defaultComponents = { RadioGroup, RadioGroupOption, RadioGroupLabel, RadioGroupDescription }
 
   if (typeof input === 'string') {
@@ -76,9 +86,7 @@ describe('Safe guards', () => {
 
   it('should be possible to render a RadioGroup without options and without crashing', () => {
     renderTemplate({
-      template: html`
-        <RadioGroup v-model="deliveryMethod" />
-      `,
+      template: html` <RadioGroup v-model="deliveryMethod" /> `,
       setup() {
         let deliveryMethod = ref(undefined)
         return { deliveryMethod }
@@ -453,6 +461,48 @@ describe('Rendering', () => {
 
     // Make sure that the onChange handler got called
     expect(changeFn).toHaveBeenCalledTimes(1)
+  })
+
+  it('should guarantee the order of DOM nodes when performing actions', async () => {
+    let props = reactive({ hide: false })
+
+    renderTemplate({
+      template: html`
+        <RadioGroup v-model="value">
+          <RadioGroupOption value="a">Option 1</RadioGroupOption>
+          <RadioGroupOption v-if="!hide" value="b">Option 2</RadioGroupOption>
+          <RadioGroupOption value="c">Option 3</RadioGroupOption>
+        </RadioGroup>
+      `,
+      setup() {
+        return {
+          value: ref('a'),
+          get hide() {
+            return props.hide
+          },
+        }
+      },
+    })
+
+    // Focus the RadioGroup
+    await press(Keys.Tab)
+
+    props.hide = true
+    await nextFrame()
+
+    props.hide = false
+    await nextFrame()
+
+    // Verify that the first radio group option is active
+    assertActiveElement(getByText('Option 1'))
+
+    await press(Keys.ArrowDown)
+    // Verify that the second radio group option is active
+    assertActiveElement(getByText('Option 2'))
+
+    await press(Keys.ArrowDown)
+    // Verify that the third radio group option is active
+    assertActiveElement(getByText('Option 3'))
   })
 })
 

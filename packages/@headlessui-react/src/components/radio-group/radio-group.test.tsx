@@ -113,7 +113,7 @@ describe('Rendering', () => {
 
       return (
         <>
-          <button onClick={() => setShowFirst(v => !v)}>Toggle</button>
+          <button onClick={() => setShowFirst((v) => !v)}>Toggle</button>
           <RadioGroup value={active} onChange={setActive}>
             <RadioGroup.Label>Pizza Delivery</RadioGroup.Label>
             {showFirst && <RadioGroup.Option value="pickup">Pickup</RadioGroup.Option>}
@@ -145,7 +145,7 @@ describe('Rendering', () => {
       let [disabled, setDisabled] = useState(true)
       return (
         <>
-          <button onClick={() => setDisabled(v => !v)}>Toggle</button>
+          <button onClick={() => setDisabled((v) => !v)}>Toggle</button>
           <RadioGroup value={undefined} onChange={changeFn} disabled={disabled}>
             <RadioGroup.Label>Pizza Delivery</RadioGroup.Label>
             <RadioGroup.Option value="pickup">Pickup</RadioGroup.Option>
@@ -208,7 +208,7 @@ describe('Rendering', () => {
       let [disabled, setDisabled] = useState(true)
       return (
         <>
-          <button onClick={() => setDisabled(v => !v)}>Toggle</button>
+          <button onClick={() => setDisabled((v) => !v)}>Toggle</button>
           <RadioGroup value={undefined} onChange={changeFn}>
             <RadioGroup.Label>Pizza Delivery</RadioGroup.Label>
             <RadioGroup.Option value="pickup">Pickup</RadioGroup.Option>
@@ -267,6 +267,37 @@ describe('Rendering', () => {
 
     // Make sure that the onChange handler got called
     expect(changeFn).toHaveBeenCalledTimes(1)
+  })
+
+  it('should guarantee the order of DOM nodes when performing actions', async () => {
+    function Example({ hide = false }) {
+      return (
+        <RadioGroup value={undefined} onChange={() => {}}>
+          <RadioGroup.Option value="a">Option 1</RadioGroup.Option>
+          {!hide && <RadioGroup.Option value="b">Option 2</RadioGroup.Option>}
+          <RadioGroup.Option value="c">Option 3</RadioGroup.Option>
+        </RadioGroup>
+      )
+    }
+
+    let { rerender } = render(<Example />)
+
+    // Focus the RadioGroup
+    await press(Keys.Tab)
+
+    rerender(<Example hide={true} />) // Remove RadioGroup.Option 2
+    rerender(<Example hide={false} />) // Re-add RadioGroup.Option 2
+
+    // Verify that the first radio group option is active
+    assertActiveElement(getByText('Option 1'))
+
+    await press(Keys.ArrowDown)
+    // Verify that the second radio group option is active
+    assertActiveElement(getByText('Option 2'))
+
+    await press(Keys.ArrowDown)
+    // Verify that the third radio group option is active
+    assertActiveElement(getByText('Option 3'))
   })
 })
 
@@ -714,7 +745,7 @@ describe('Keyboard interactions', () => {
             <button>Before</button>
             <RadioGroup
               value={value}
-              onChange={v => {
+              onChange={(v) => {
                 setValue(v)
                 changeFn(v)
               }}
@@ -784,7 +815,7 @@ describe('Mouse interactions', () => {
           <button>Before</button>
           <RadioGroup
             value={value}
-            onChange={v => {
+            onChange={(v) => {
               setValue(v)
               changeFn(v)
             }}

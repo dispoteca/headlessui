@@ -99,8 +99,8 @@ let reducers: {
     let activeItemIndex = calculateActiveIndex(action, {
       resolveItems: () => state.items,
       resolveActiveIndex: () => state.activeItemIndex,
-      resolveId: item => item.id,
-      resolveDisabled: item => item.dataRef.current.disabled,
+      resolveId: (item) => item.id,
+      resolveDisabled: (item) => item.dataRef.current.disabled,
     })
 
     if (state.searchQuery === '' && state.activeItemIndex === activeItemIndex) return state
@@ -108,27 +108,46 @@ let reducers: {
   },
   [MenuActionTypes.Search]: (state, action) => {
     let searchQuery = state.searchQuery + action.value.toLowerCase()
-    let match = state.items.findIndex(
-      item =>
+
+    let reOrderedItems =
+      state.activeItemIndex !== null
+        ? state.items
+            .slice(state.activeItemIndex + 1)
+            .concat(state.items.slice(0, state.activeItemIndex + 1))
+        : state.items
+
+    let matchingItem = reOrderedItems.find(
+      (item) =>
         item.dataRef.current.textValue?.startsWith(searchQuery) && !item.dataRef.current.disabled
     )
 
-    if (match === -1 || match === state.activeItemIndex) return { ...state, searchQuery }
-    return { ...state, searchQuery, activeItemIndex: match }
+    let matchIdx = matchingItem ? state.items.indexOf(matchingItem) : -1
+    if (matchIdx === -1 || matchIdx === state.activeItemIndex) return { ...state, searchQuery }
+    return { ...state, searchQuery, activeItemIndex: matchIdx }
   },
   [MenuActionTypes.ClearSearch](state) {
     if (state.searchQuery === '') return state
-    return { ...state, searchQuery: '' }
+    return { ...state, searchQuery: '', searchActiveItemIndex: null }
   },
-  [MenuActionTypes.RegisterItem]: (state, action) => ({
-    ...state,
-    items: [...state.items, { id: action.id, dataRef: action.dataRef }],
-  }),
+  [MenuActionTypes.RegisterItem]: (state, action) => {
+    let orderMap = Array.from(
+      state.itemsRef.current?.querySelectorAll('[id^="headlessui-menu-item-"]')!
+    ).reduce(
+      (lookup, element, index) => Object.assign(lookup, { [element.id]: index }),
+      {}
+    ) as Record<string, number>
+
+    let items = [...state.items, { id: action.id, dataRef: action.dataRef }].sort(
+      (a, z) => orderMap[a.id] - orderMap[z.id]
+    )
+
+    return { ...state, items }
+  },
   [MenuActionTypes.UnregisterItem]: (state, action) => {
     let nextItems = state.items.slice()
     let currentActiveItem = state.activeItemIndex !== null ? nextItems[state.activeItemIndex] : null
 
-    let idx = nextItems.findIndex(a => a.id === action.id)
+    let idx = nextItems.findIndex((a) => a.id === action.id)
 
     if (idx !== -1) nextItems.splice(idx, 1)
 
@@ -215,7 +234,7 @@ export function Menu<TTag extends ElementType = typeof DEFAULT_MENU_TAG>({
   }, [onCloseCallback, propsRef])
 
   // Handle outside click
-  useWindowEvent('mousedown', event => {
+  useWindowEvent('mousedown', (event) => {
     let target = event.target as HTMLElement
 
     if (menuState !== MenuStates.Open) return
@@ -233,9 +252,10 @@ export function Menu<TTag extends ElementType = typeof DEFAULT_MENU_TAG>({
     }
   })
 
-  let slot = useMemo<MenuRenderPropArg>(() => ({ open: menuState === MenuStates.Open }), [
-    menuState,
-  ])
+  let slot = useMemo<MenuRenderPropArg>(
+    () => ({ open: menuState === MenuStates.Open }),
+    [menuState]
+  )
 
   useEffect(() => {
     dispatch({ type: MenuActionTypes.SetShouldClose, shouldClose })
@@ -274,7 +294,7 @@ let Button = forwardRefWithAs(function Button<TTag extends ElementType = typeof 
   props: Props<TTag, ButtonRenderPropArg, ButtonPropsWeControl>,
   ref: Ref<HTMLButtonElement>
 ) {
-  let [state, dispatch] = useMenuContext([Menu.name, Button.name].join('.'))
+  let [state, dispatch] = useMenuContext('Menu.Button')
   let buttonRef = useSyncRefs(state.buttonRef, ref)
 
   let id = `headlessui-menu-button-${useId()}`
@@ -334,9 +354,10 @@ let Button = forwardRefWithAs(function Button<TTag extends ElementType = typeof 
     [dispatch, d, state, props.disabled]
   )
 
-  let slot = useMemo<ButtonRenderPropArg>(() => ({ open: state.menuState === MenuStates.Open }), [
-    state,
-  ])
+  let slot = useMemo<ButtonRenderPropArg>(
+    () => ({ open: state.menuState === MenuStates.Open }),
+    [state]
+  )
   let passthroughProps = props
   let propsWeControl = {
     ref: buttonRef,
@@ -379,7 +400,7 @@ let Items = forwardRefWithAs(function Items<TTag extends ElementType = typeof DE
     PropsForFeatures<typeof ItemsRenderFeatures>,
   ref: Ref<HTMLDivElement>
 ) {
-  let [state, dispatch] = useMenuContext([Menu.name, Items.name].join('.'))
+  let [state, dispatch] = useMenuContext('Menu.Items')
   let itemsRef = useSyncRefs(state.itemsRef, ref)
 
   let id = `headlessui-menu-items-${useId()}`
@@ -502,9 +523,10 @@ let Items = forwardRefWithAs(function Items<TTag extends ElementType = typeof DE
     }
   }, [])
 
-  let slot = useMemo<ItemsRenderPropArg>(() => ({ open: state.menuState === MenuStates.Open }), [
-    state,
-  ])
+  let slot = useMemo<ItemsRenderPropArg>(
+    () => ({ open: state.menuState === MenuStates.Open }),
+    [state]
+  )
   let propsWeControl = {
     'aria-activedescendant':
       state.activeItemIndex === null ? undefined : state.items[state.activeItemIndex]?.id,
@@ -553,7 +575,7 @@ function Item<TTag extends ElementType = typeof DEFAULT_ITEM_TAG>(
   }
 ) {
   let { disabled = false, onClick, ...passthroughProps } = props
-  let [state, dispatch] = useMenuContext([Menu.name, Item.name].join('.'))
+  let [state, dispatch] = useMenuContext('Menu.Item')
   let id = `headlessui-menu-item-${useId()}`
   let active = state.activeItemIndex !== null ? state.items[state.activeItemIndex].id === id : false
 

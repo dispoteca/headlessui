@@ -209,7 +209,7 @@ let DialogRoot = forwardRefWithAs(function Dialog<
   useInertOthers(internalDialogRef, hasNestedDialogs ? enabled : false)
 
   // Handle outside click
-  useWindowEvent('mousedown', event => {
+  useWindowEvent('mousedown', (event) => {
     let target = event.target as HTMLElement
 
     if (dialogState !== DialogStates.Open) return
@@ -220,7 +220,7 @@ let DialogRoot = forwardRefWithAs(function Dialog<
   })
 
   // Handle `Escape` to close
-  useWindowEvent('keydown', event => {
+  useWindowEvent('keydown', (event) => {
     if (event.key !== Keys.Escape) return
     if (dialogState !== DialogStates.Open) return
     if (hasNestedDialogs) return
@@ -253,7 +253,7 @@ let DialogRoot = forwardRefWithAs(function Dialog<
     if (dialogState !== DialogStates.Open) return
     if (!internalDialogRef.current) return
 
-    let observer = new IntersectionObserver(entries => {
+    let observer = new IntersectionObserver((entries) => {
       for (let entry of entries) {
         if (
           entry.boundingClientRect.x === 0 &&
@@ -280,9 +280,10 @@ let DialogRoot = forwardRefWithAs(function Dialog<
     [dialogState, state, close, setTitleId]
   )
 
-  let slot = useMemo<DialogRenderPropArg>(() => ({ open: dialogState === DialogStates.Open }), [
-    dialogState,
-  ])
+  let slot = useMemo<DialogRenderPropArg>(
+    () => ({ open: dialogState === DialogStates.Open }),
+    [dialogState]
+  )
 
   let propsWeControl = {
     ref: dialogRef,
@@ -307,11 +308,11 @@ let DialogRoot = forwardRefWithAs(function Dialog<
         match(message, {
           [StackMessage.Add]() {
             containers.current.add(element)
-            setNestedDialogCount(count => count + 1)
+            setNestedDialogCount((count) => count + 1)
           },
           [StackMessage.Remove]() {
             containers.current.add(element)
-            setNestedDialogCount(count => count - 1)
+            setNestedDialogCount((count) => count - 1)
           },
         })
       }, [])}
@@ -351,7 +352,7 @@ type OverlayPropsWeControl = 'id' | 'aria-hidden' | 'onClick'
 let Overlay = forwardRefWithAs(function Overlay<
   TTag extends ElementType = typeof DEFAULT_OVERLAY_TAG
 >(props: Props<TTag, OverlayRenderPropArg, OverlayPropsWeControl>, ref: Ref<HTMLDivElement>) {
-  let [{ dialogState, close }] = useDialogContext([Dialog.displayName, Overlay.name].join('.'))
+  let [{ dialogState, close }] = useDialogContext('Dialog.Overlay')
   let overlayRef = useSyncRefs(ref)
 
   let id = `headlessui-dialog-overlay-${useId()}`
@@ -367,9 +368,10 @@ let Overlay = forwardRefWithAs(function Overlay<
     [close]
   )
 
-  let slot = useMemo<OverlayRenderPropArg>(() => ({ open: dialogState === DialogStates.Open }), [
-    dialogState,
-  ])
+  let slot = useMemo<OverlayRenderPropArg>(
+    () => ({ open: dialogState === DialogStates.Open }),
+    [dialogState]
+  )
   let propsWeControl = {
     ref: overlayRef,
     id,
@@ -397,7 +399,7 @@ type TitlePropsWeControl = 'id'
 function Title<TTag extends ElementType = typeof DEFAULT_TITLE_TAG>(
   props: Props<TTag, TitleRenderPropArg, TitlePropsWeControl>
 ) {
-  let [{ dialogState, setTitleId }] = useDialogContext([Dialog.displayName, Title.name].join('.'))
+  let [{ dialogState, setTitleId }] = useDialogContext('Dialog.Title')
 
   let id = `headlessui-dialog-title-${useId()}`
 
@@ -406,9 +408,10 @@ function Title<TTag extends ElementType = typeof DEFAULT_TITLE_TAG>(
     return () => setTitleId(null)
   }, [id, setTitleId])
 
-  let slot = useMemo<TitleRenderPropArg>(() => ({ open: dialogState === DialogStates.Open }), [
-    dialogState,
-  ])
+  let slot = useMemo<TitleRenderPropArg>(
+    () => ({ open: dialogState === DialogStates.Open }),
+    [dialogState]
+  )
   let propsWeControl = { id }
   let passthroughProps = props
 

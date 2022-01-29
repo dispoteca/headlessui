@@ -253,7 +253,7 @@ describe('Rendering', () => {
           <Menu>
             <Menu.Button>Trigger</Menu.Button>
             <Menu.Items>
-              {data => (
+              {(data) => (
                 <>
                   <Menu.Item as="a">{JSON.stringify(data)}</Menu.Item>
                 </>
@@ -350,6 +350,49 @@ describe('Rendering', () => {
       })
     )
   })
+
+  it('should guarantee the order of DOM nodes when performing actions', async () => {
+    function Example({ hide = false }) {
+      return (
+        <>
+          <Menu>
+            <Menu.Button>Trigger</Menu.Button>
+            <Menu.Items>
+              <Menu.Item as="button">Item 1</Menu.Item>
+              {!hide && <Menu.Item as="button">Item 2</Menu.Item>}
+              <Menu.Item as="button">Item 3</Menu.Item>
+            </Menu.Items>
+          </Menu>
+        </>
+      )
+    }
+
+    let { rerender } = render(<Example />)
+
+    // Open the Menu
+    await click(getByText('Trigger'))
+
+    rerender(<Example hide={true} />) // Remove Menu.Item 2
+    rerender(<Example hide={false} />) // Re-add Menu.Item 2
+
+    assertMenu({ state: MenuState.Visible })
+
+    let items = getMenuItems()
+
+    // Focus the first item
+    await press(Keys.ArrowDown)
+
+    // Verify that the first menu item is active
+    assertMenuLinkedWithMenuItem(items[0])
+
+    await press(Keys.ArrowDown)
+    // Verify that the second menu item is active
+    assertMenuLinkedWithMenuItem(items[1])
+
+    await press(Keys.ArrowDown)
+    // Verify that the third menu item is active
+    assertMenuLinkedWithMenuItem(items[2])
+  })
 })
 
 describe('Rendering composition', () => {
@@ -360,10 +403,10 @@ describe('Rendering composition', () => {
         <Menu>
           <Menu.Button>Trigger</Menu.Button>
           <Menu.Items>
-            <Menu.Item as="a" className={bag => JSON.stringify(bag)}>
+            <Menu.Item as="a" className={(bag) => JSON.stringify(bag)}>
               Item A
             </Menu.Item>
-            <Menu.Item as="a" disabled className={bag => JSON.stringify(bag)}>
+            <Menu.Item as="a" disabled className={(bag) => JSON.stringify(bag)}>
               Item B
             </Menu.Item>
             <Menu.Item as="a" className="no-special-treatment">
@@ -441,7 +484,7 @@ describe('Rendering composition', () => {
 
       // Verify items are buttons now
       let items = getMenuItems()
-      items.forEach(item => assertMenuItem(item, { tag: 'button' }))
+      items.forEach((item) => assertMenuItem(item, { tag: 'button' }))
     })
   )
 
@@ -453,11 +496,11 @@ describe('Rendering composition', () => {
           <Menu.Button>Trigger</Menu.Button>
           <div className="outer">
             <Menu.Items>
-              <div className="py-1 inner">
+              <div className="inner py-1">
                 <Menu.Item as="button">Item A</Menu.Item>
                 <Menu.Item as="button">Item B</Menu.Item>
               </div>
-              <div className="py-1 inner">
+              <div className="inner py-1">
                 <Menu.Item as="button">Item C</Menu.Item>
                 <Menu.Item>
                   <div>
@@ -465,7 +508,7 @@ describe('Rendering composition', () => {
                   </div>
                 </Menu.Item>
               </div>
-              <div className="py-1 inner">
+              <div className="inner py-1">
                 <form className="inner">
                   <Menu.Item as="button">Item E</Menu.Item>
                 </form>
@@ -480,11 +523,11 @@ describe('Rendering composition', () => {
 
       expect.hasAssertions()
 
-      document.querySelectorAll('.outer').forEach(element => {
+      document.querySelectorAll('.outer').forEach((element) => {
         expect(element).not.toHaveAttribute('role', 'none')
       })
 
-      document.querySelectorAll('.inner').forEach(element => {
+      document.querySelectorAll('.inner').forEach((element) => {
         expect(element).toHaveAttribute('role', 'none')
       })
     })
@@ -514,7 +557,7 @@ describe('Composition', () => {
             <Debug name="Transition" fn={orderFn} />
             <Menu.Items>
               <Menu.Item as="a">
-                {data => (
+                {(data) => (
                   <>
                     {JSON.stringify(data)}
                     <Debug name="Menu.Item" fn={orderFn} />
@@ -568,7 +611,7 @@ describe('Composition', () => {
             <Debug name="Transition" fn={orderFn} />
             <Menu.Items>
               <Menu.Item as="a">
-                {data => (
+                {(data) => (
                   <>
                     {JSON.stringify(data)}
                     <Debug name="Menu.Item" fn={orderFn} />
@@ -650,7 +693,7 @@ describe('Keyboard interactions', () => {
         // Verify we have menu items
         let items = getMenuItems()
         expect(items).toHaveLength(3)
-        items.forEach(item => assertMenuItem(item))
+        items.forEach((item) => assertMenuItem(item))
 
         // Verify that the first menu item is active
         assertMenuLinkedWithMenuItem(items[0])
@@ -1014,7 +1057,7 @@ describe('Keyboard interactions', () => {
         // Verify we have menu items
         let items = getMenuItems()
         expect(items).toHaveLength(3)
-        items.forEach(item => assertMenuItem(item))
+        items.forEach((item) => assertMenuItem(item))
         assertMenuLinkedWithMenuItem(items[0])
       })
     )
@@ -1352,7 +1395,7 @@ describe('Keyboard interactions', () => {
         // Verify we have menu items
         let items = getMenuItems()
         expect(items).toHaveLength(3)
-        items.forEach(item => assertMenuItem(item))
+        items.forEach((item) => assertMenuItem(item))
         assertMenuLinkedWithMenuItem(items[0])
 
         // Try to tab
@@ -1401,7 +1444,7 @@ describe('Keyboard interactions', () => {
         // Verify we have menu items
         let items = getMenuItems()
         expect(items).toHaveLength(3)
-        items.forEach(item => assertMenuItem(item))
+        items.forEach((item) => assertMenuItem(item))
         assertMenuLinkedWithMenuItem(items[0])
 
         // Try to Shift+Tab
@@ -1452,7 +1495,7 @@ describe('Keyboard interactions', () => {
         // Verify we have menu items
         let items = getMenuItems()
         expect(items).toHaveLength(3)
-        items.forEach(item => assertMenuItem(item))
+        items.forEach((item) => assertMenuItem(item))
 
         // Verify that the first menu item is active
         assertMenuLinkedWithMenuItem(items[0])
@@ -1546,7 +1589,7 @@ describe('Keyboard interactions', () => {
         // Verify we have menu items
         let items = getMenuItems()
         expect(items).toHaveLength(3)
-        items.forEach(item => assertMenuItem(item))
+        items.forEach((item) => assertMenuItem(item))
         assertMenuLinkedWithMenuItem(items[0])
 
         // We should be able to go down once
@@ -1594,7 +1637,7 @@ describe('Keyboard interactions', () => {
         // Verify we have menu items
         let items = getMenuItems()
         expect(items).toHaveLength(3)
-        items.forEach(item => assertMenuItem(item))
+        items.forEach((item) => assertMenuItem(item))
         assertMenuLinkedWithMenuItem(items[1])
 
         // We should be able to go down once
@@ -1636,7 +1679,7 @@ describe('Keyboard interactions', () => {
         // Verify we have menu items
         let items = getMenuItems()
         expect(items).toHaveLength(3)
-        items.forEach(item => assertMenuItem(item))
+        items.forEach((item) => assertMenuItem(item))
         assertMenuLinkedWithMenuItem(items[2])
       })
     )
@@ -1680,7 +1723,7 @@ describe('Keyboard interactions', () => {
         // Verify we have menu items
         let items = getMenuItems()
         expect(items).toHaveLength(3)
-        items.forEach(item => assertMenuItem(item))
+        items.forEach((item) => assertMenuItem(item))
 
         // ! ALERT: The LAST item should now be active
         assertMenuLinkedWithMenuItem(items[2])
@@ -1778,7 +1821,7 @@ describe('Keyboard interactions', () => {
         // Verify we have menu items
         let items = getMenuItems()
         expect(items).toHaveLength(3)
-        items.forEach(item => assertMenuItem(item))
+        items.forEach((item) => assertMenuItem(item))
         assertMenuLinkedWithMenuItem(items[0])
       })
     )
@@ -1816,7 +1859,7 @@ describe('Keyboard interactions', () => {
         // Verify we have menu items
         let items = getMenuItems()
         expect(items).toHaveLength(3)
-        items.forEach(item => assertMenuItem(item))
+        items.forEach((item) => assertMenuItem(item))
         assertMenuLinkedWithMenuItem(items[2])
 
         // We should not be able to go up (because those are disabled)
@@ -1866,7 +1909,7 @@ describe('Keyboard interactions', () => {
         // Verify we have menu items
         let items = getMenuItems()
         expect(items).toHaveLength(3)
-        items.forEach(item => assertMenuItem(item))
+        items.forEach((item) => assertMenuItem(item))
         assertMenuLinkedWithMenuItem(items[2])
 
         // We should be able to go down once
@@ -2588,6 +2631,7 @@ describe('Keyboard interactions', () => {
         assertMenuLinkedWithMenuItem(items[2])
       })
     )
+
     it(
       'should be possible to search for a word (case insensitive)',
       suppressConsoleLogs(async () => {
@@ -2618,6 +2662,40 @@ describe('Keyboard interactions', () => {
 
         // We should be on `bob`
         assertMenuLinkedWithMenuItem(items[1])
+      })
+    )
+
+    it(
+      'should be possible to search for the next occurence',
+      suppressConsoleLogs(async () => {
+        render(
+          <Menu>
+            <Menu.Button>Trigger</Menu.Button>
+            <Menu.Items>
+              <Menu.Item as="a">alice</Menu.Item>
+              <Menu.Item as="a">bob</Menu.Item>
+              <Menu.Item as="a">charlie</Menu.Item>
+              <Menu.Item as="a">bob</Menu.Item>
+            </Menu.Items>
+          </Menu>
+        )
+
+        // Open menu
+        await click(getMenuButton())
+
+        let items = getMenuItems()
+
+        // Search for bob
+        await type(word('b'))
+
+        // We should be on the first `bob`
+        assertMenuLinkedWithMenuItem(items[1])
+
+        // Search for bob again
+        await type(word('b'))
+
+        // We should be on the second `bob`
+        assertMenuLinkedWithMenuItem(items[3])
       })
     )
   })
@@ -2658,7 +2736,7 @@ describe('Mouse interactions', () => {
       // Verify we have menu items
       let items = getMenuItems()
       expect(items).toHaveLength(3)
-      items.forEach(item => assertMenuItem(item))
+      items.forEach((item) => assertMenuItem(item))
     })
   )
 
