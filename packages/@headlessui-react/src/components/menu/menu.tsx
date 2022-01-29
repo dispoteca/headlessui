@@ -204,7 +204,7 @@ export function Menu<TTag extends ElementType = typeof DEFAULT_MENU_TAG>({
   shouldClose,
   ...rest
 }: Props<TTag, MenuRenderPropArg> & {
-  onClose: (state: MenuStateDefinition, dispatch: Dispatch<MenuActions>) => void
+  onClose?: (state: MenuStateDefinition, dispatch: Dispatch<MenuActions>) => void
   shouldClose?: ShouldClose
 }) {
   let d = useDisposables()
