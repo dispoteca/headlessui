@@ -31,6 +31,7 @@ interface StateDefinition {
 
   orientation: 'horizontal' | 'vertical'
   activation: 'auto' | 'manual'
+  manageFocus: boolean
 
   tabs: MutableRefObject<HTMLElement | null>[]
   panels: MutableRefObject<HTMLElement | null>[]
@@ -40,6 +41,7 @@ enum ActionTypes {
   SetSelectedIndex,
   SetOrientation,
   SetActivation,
+  SetManageFocus,
 
   RegisterTab,
   UnregisterTab,
@@ -54,6 +56,7 @@ type Actions =
   | { type: ActionTypes.SetSelectedIndex; index: number }
   | { type: ActionTypes.SetOrientation; orientation: StateDefinition['orientation'] }
   | { type: ActionTypes.SetActivation; activation: StateDefinition['activation'] }
+  | { type: ActionTypes.SetManageFocus; manageFocus: StateDefinition['manageFocus'] }
   | { type: ActionTypes.RegisterTab; tab: MutableRefObject<HTMLElement | null> }
   | { type: ActionTypes.UnregisterTab; tab: MutableRefObject<HTMLElement | null> }
   | { type: ActionTypes.RegisterPanel; panel: MutableRefObject<HTMLElement | null> }
@@ -77,6 +80,10 @@ let reducers: {
   [ActionTypes.SetActivation](state, action) {
     if (state.activation === action.activation) return state
     return { ...state, activation: action.activation }
+  },
+  [ActionTypes.SetManageFocus](state, action) {
+    if (state.manageFocus === action.manageFocus) return state
+    return { ...state, manageFocus: action.manageFocus }
   },
   [ActionTypes.RegisterTab](state, action) {
     if (state.tabs.includes(action.tab)) return state
@@ -130,6 +137,7 @@ function Tabs<TTag extends ElementType = typeof DEFAULT_TABS_TAG>(
     selectedIndex?: number
     vertical?: boolean
     manual?: boolean
+    manageFocus?: boolean
   }
 ) {
   let {
@@ -138,6 +146,7 @@ function Tabs<TTag extends ElementType = typeof DEFAULT_TABS_TAG>(
     manual = false,
     onChange,
     selectedIndex = null,
+    manageFocus = true,
     ...passThroughProps
   } = props
   const orientation = vertical ? 'vertical' : 'horizontal'
@@ -149,6 +158,7 @@ function Tabs<TTag extends ElementType = typeof DEFAULT_TABS_TAG>(
     panels: [],
     orientation,
     activation,
+    manageFocus,
   } as StateDefinition)
   let slot = useMemo(() => ({ selectedIndex: state.selectedIndex }), [state.selectedIndex])
   let onChangeRef = useRef<(index: number) => void>(() => {})
@@ -160,6 +170,10 @@ function Tabs<TTag extends ElementType = typeof DEFAULT_TABS_TAG>(
   useEffect(() => {
     dispatch({ type: ActionTypes.SetActivation, activation })
   }, [activation])
+
+  useEffect(() => {
+    dispatch({ type: ActionTypes.SetManageFocus, manageFocus })
+  }, [manageFocus])
 
   useEffect(() => {
     if (typeof onChange === 'function') {
@@ -275,8 +289,10 @@ export function Tab<TTag extends ElementType = typeof DEFAULT_TAB_TAG>(
 ) {
   let id = `headlessui-tabs-tab-${useId()}`
 
-  let [{ selectedIndex, tabs, panels, orientation, activation }, { dispatch, change }] =
-    useTabsContext(Tab.name)
+  let [
+    { selectedIndex, tabs, panels, orientation, activation, manageFocus },
+    { dispatch, change },
+  ] = useTabsContext(Tab.name)
 
   let internalTabRef = useRef<HTMLElement>(null)
   let tabRef = useSyncRefs(internalTabRef, (element) => {
@@ -304,59 +320,68 @@ export function Tab<TTag extends ElementType = typeof DEFAULT_TAB_TAG>(
         return
       }
 
-      switch (event.key) {
-        case Keys.Home:
-        case Keys.PageUp:
-          event.preventDefault()
-          event.stopPropagation()
+      if (manageFocus) {
+        switch (event.key) {
+          case Keys.Home:
+          case Keys.PageUp:
+            event.preventDefault()
+            event.stopPropagation()
 
-          return focusIn(list, Focus.First)
+            return focusIn(list, Focus.First)
 
-        case Keys.End:
-        case Keys.PageDown:
-          event.preventDefault()
-          event.stopPropagation()
+          case Keys.End:
+          case Keys.PageDown:
+            event.preventDefault()
+            event.stopPropagation()
 
-          return focusIn(list, Focus.Last)
+            return focusIn(list, Focus.Last)
+        }
+
+        return match(orientation, {
+          vertical() {
+            if (event.key === Keys.ArrowUp) return focusIn(list, Focus.Previous | Focus.WrapAround)
+            if (event.key === Keys.ArrowDown) return focusIn(list, Focus.Next | Focus.WrapAround)
+            return
+          },
+          horizontal() {
+            if (event.key === Keys.ArrowLeft)
+              return focusIn(list, Focus.Previous | Focus.WrapAround)
+            if (event.key === Keys.ArrowRight) return focusIn(list, Focus.Next | Focus.WrapAround)
+            return
+          },
+        })
       }
 
-      return match(orientation, {
-        vertical() {
-          if (event.key === Keys.ArrowUp) return focusIn(list, Focus.Previous | Focus.WrapAround)
-          if (event.key === Keys.ArrowDown) return focusIn(list, Focus.Next | Focus.WrapAround)
-          return
-        },
-        horizontal() {
-          if (event.key === Keys.ArrowLeft) return focusIn(list, Focus.Previous | Focus.WrapAround)
-          if (event.key === Keys.ArrowRight) return focusIn(list, Focus.Next | Focus.WrapAround)
-          return
-        },
-      })
+      return
     },
-    [tabs, orientation, myIndex, change]
+    [tabs, orientation, myIndex, change, manageFocus]
   )
 
   let handleFocus = useCallback(() => {
-    internalTabRef.current?.focus()
-  }, [internalTabRef])
+    if (manageFocus) {
+      internalTabRef.current?.focus()
+    }
+  }, [internalTabRef, manageFocus])
 
   let handleSelection = useCallback(() => {
-    internalTabRef.current?.focus()
+    if (manageFocus) {
+      internalTabRef.current?.focus()
+    }
     change(myIndex)
-  }, [change, myIndex, internalTabRef])
+  }, [change, myIndex, internalTabRef, manageFocus])
 
   let slot = useMemo(() => ({ selected }), [selected])
   let propsWeControl = {
     ref: tabRef,
     onKeyDown: handleKeyDown,
-    onFocus: activation === 'manual' ? handleFocus : handleSelection,
+    onFocus: manageFocus ? activation === 'manual' ? handleFocus : handleSelection : undefined,
     onClick: handleSelection,
     id,
     role: 'tab',
     type: useResolveButtonType(props, internalTabRef),
     'aria-controls': panels[myIndex]?.current?.id,
     'aria-selected': selected,
-    tabIndex: selected ? 0 : -1,
+    tabIndex: manageFocus ? (selected ? 0 : -1) : undefined,
   }
   let passThroughProps = props
 
@@ -403,7 +428,7 @@ function Panel<TTag extends ElementType = typeof DEFAULT_PANEL_TAG>(
   props: Props<TTag, PanelRenderPropArg, PanelPropsWeControl> &
     PropsForFeatures<typeof PanelRenderFeatures>
 ) {
-  let [{ selectedIndex, tabs, panels }, { dispatch }] = useTabsContext('Tab.Panel')
+  let [{ selectedIndex, tabs, panels, manageFocus }, { dispatch }] = useTabsContext('Tab.Panel')
 
   let id = `headlessui-tabs-panel-${useId()}`
   let internalPanelRef = useRef<HTMLElement>(null)
@@ -426,7 +451,7 @@ function Panel<TTag extends ElementType = typeof DEFAULT_PANEL_TAG>(
     id,
     role: 'tabpanel',
     'aria-labelledby': tabs[myIndex]?.current?.id,
-    tabIndex: selected ? 0 : -1,
+    tabIndex: manageFocus ? (selected ? 0 : -1) : undefined,
   }
 
   let passThroughProps = props
