@@ -52,7 +52,6 @@ export interface ListboxStateDefinition {
   orientation: 'horizontal' | 'vertical'
 
   propsRef: MutableRefObject<{
-    autoFocus: boolean
     value: unknown
     onChange(value: unknown): void
     onClose(state: ListboxStateDefinition, dispatch: Dispatch<ListboxActions>): void
@@ -61,6 +60,7 @@ export interface ListboxStateDefinition {
   buttonRef: MutableRefObject<HTMLButtonElement | null>
   optionsRef: MutableRefObject<HTMLUListElement | null>
 
+  autoFocus: boolean
   disabled: boolean
   options: { id: string; dataRef: ListboxOptionDataRef }[]
   searchQuery: string
@@ -71,6 +71,7 @@ export enum ListboxActionTypes {
   OpenListbox,
   CloseListbox,
 
+  SetAutoFocus,
   SetDisabled,
   SetOrientation,
 
@@ -85,6 +86,7 @@ export enum ListboxActionTypes {
 export type ListboxActions =
   | { type: ListboxActionTypes.CloseListbox }
   | { type: ListboxActionTypes.OpenListbox; enable?: boolean }
+  | { type: ListboxActionTypes.SetAutoFocus; autoFocus: boolean }
   | { type: ListboxActionTypes.SetDisabled; disabled: boolean }
   | { type: ListboxActionTypes.SetOrientation; orientation: ListboxStateDefinition['orientation'] }
   | { type: ListboxActionTypes.GoToOption; focus: Focus.Specific; id: string }
@@ -113,6 +115,10 @@ let reducers: {
       disabled: action.enable ? false : state.disabled,
       listboxState: ListboxStates.Open,
     }
+  },
+  [ListboxActionTypes.SetAutoFocus](state, action) {
+    if (state.autoFocus === action.autoFocus) return state
+    return { ...state, autoFocus: action.autoFocus }
   },
   [ListboxActionTypes.SetDisabled](state, action) {
     if (state.disabled === action.disabled) return state
@@ -271,7 +277,6 @@ export function Listbox<TTag extends ElementType = typeof DEFAULT_LISTBOX_TAG, T
     listboxState: ListboxStates.Closed,
     propsRef: {
       current: {
-        autoFocus,
         value,
         onChange,
         onClose: onCloseCallback,
@@ -280,6 +285,7 @@ export function Listbox<TTag extends ElementType = typeof DEFAULT_LISTBOX_TAG, T
     labelRef: createRef(),
     buttonRef: createRef(),
     optionsRef: createRef(),
+    autoFocus,
     disabled,
     orientation,
     options: [],
@@ -288,9 +294,10 @@ export function Listbox<TTag extends ElementType = typeof DEFAULT_LISTBOX_TAG, T
   } as ListboxStateDefinition)
   let [{ listboxState, propsRef, optionsRef, buttonRef }, dispatch] = reducerBag
 
-  useIsoMorphicEffect(() => {
-    propsRef.current.autoFocus = autoFocus
-  }, [autoFocus, propsRef])
+  useIsoMorphicEffect(
+    () => dispatch({ type: ListboxActionTypes.SetAutoFocus, autoFocus }),
+    [autoFocus]
+  )
   useIsoMorphicEffect(() => {
     propsRef.current.value = value
   }, [value, propsRef])
@@ -542,7 +549,7 @@ let Options = forwardRefWithAs(function Options<
     if (!container) return
     if (state.listboxState !== ListboxStates.Open) return
     if (container === document.activeElement) return
-    if (!state.propsRef.current.autoFocus) return
+    if (!state.autoFocus) return
 
     container.focus({ preventScroll: true })
   }, [state.listboxState, state.optionsRef])
@@ -717,9 +724,9 @@ function Option<
     if (state.listboxState !== ListboxStates.Open) return
     if (!selected) return
     dispatch({ type: ListboxActionTypes.GoToOption, focus: Focus.Specific, id })
-    if (!state.propsRef.current.autoFocus) return
+    if (!state.autoFocus) return
     document.getElementById(id)?.focus?.()
-  }, [state.listboxState])
+  }, [state.autoFocus, state.listboxState])
 
   useIsoMorphicEffect(() => {
     if (state.listboxState !== ListboxStates.Open) return
