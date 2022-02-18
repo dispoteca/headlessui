@@ -552,7 +552,7 @@ let Options = forwardRefWithAs(function Options<
     if (!state.autoFocus) return
 
     container.focus({ preventScroll: true })
-  }, [state.listboxState, state.optionsRef])
+  }, [state.autoFocus, state.listboxState, state.optionsRef])
 
   let handleKeyDown = useCallback(
     (event: ReactKeyboardEvent<HTMLUListElement>) => {
