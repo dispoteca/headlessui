@@ -34,6 +34,7 @@ import { useWindowEvent } from '../../hooks/use-window-event'
 import { useOpenClosed, State } from '../../internal/open-closed'
 import { useServerHandoffComplete } from '../../hooks/use-server-handoff-complete'
 import { StackProvider, StackMessage } from '../../internal/stack-context'
+import { canUseIntersectionObserver } from '../../utils/intersection-observer'
 
 enum DialogStates {
   Open,
@@ -252,23 +253,26 @@ let DialogRoot = forwardRefWithAs(function Dialog<
   useEffect(() => {
     if (dialogState !== DialogStates.Open) return
     if (!internalDialogRef.current) return
+    let observer: IntersectionObserver | undefined = undefined
 
-    let observer = new IntersectionObserver((entries) => {
-      for (let entry of entries) {
-        if (
-          entry.boundingClientRect.x === 0 &&
-          entry.boundingClientRect.y === 0 &&
-          entry.boundingClientRect.width === 0 &&
-          entry.boundingClientRect.height === 0
-        ) {
-          close()
+    if (canUseIntersectionObserver()) {
+      observer = new IntersectionObserver((entries) => {
+        for (let entry of entries) {
+          if (
+            entry.boundingClientRect.x === 0 &&
+            entry.boundingClientRect.y === 0 &&
+            entry.boundingClientRect.width === 0 &&
+            entry.boundingClientRect.height === 0
+          ) {
+            close()
+          }
         }
-      }
-    })
+      })
 
-    observer.observe(internalDialogRef.current)
+      observer.observe(internalDialogRef.current)
+    }
 
-    return () => observer.disconnect()
+    return () => observer?.disconnect()
   }, [dialogState, internalDialogRef, close])
 
   let [describedby, DescriptionProvider] = useDescriptions()
