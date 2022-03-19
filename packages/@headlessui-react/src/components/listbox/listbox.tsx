@@ -153,13 +153,16 @@ let reducers: {
     if (state.disabled) return state
     if (state.listboxState === ListboxStates.Closed) return state
 
+    let wasAlreadySearching = state.searchQuery !== ''
+    let offset = wasAlreadySearching ? 0 : 1
+
     let searchQuery = state.searchQuery + action.value.toLowerCase()
 
     let reOrderedOptions =
       state.activeOptionIndex !== null
         ? state.options
-            .slice(state.activeOptionIndex + 1)
-            .concat(state.options.slice(0, state.activeOptionIndex + 1))
+            .slice(state.activeOptionIndex + offset)
+            .concat(state.options.slice(0, state.activeOptionIndex + offset))
         : state.options
 
     let matchingOption = reOrderedOptions.find(
@@ -732,9 +735,16 @@ function Option<
     if (state.listboxState !== ListboxStates.Open) return
     if (!active) return
     let d = disposables()
-    d.nextFrame(() => document.getElementById(id)?.scrollIntoView?.({ block: 'nearest' }))
+    d.requestAnimationFrame(() => {
+      document.getElementById(id)?.scrollIntoView?.({ block: 'nearest' })
+    })
     return d.dispose
-  }, [id, active, state.listboxState])
+  }, [
+    id,
+    active,
+    state.listboxState,
+    /* We also want to trigger this when the position of the active item changes so that we can re-trigger the scrollIntoView */ state.activeOptionIndex,
+  ])
 
   let handleClick = useCallback(
     (event: { preventDefault: Function }) => {

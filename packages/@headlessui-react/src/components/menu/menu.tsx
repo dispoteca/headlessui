@@ -107,13 +107,15 @@ let reducers: {
     return { ...state, searchQuery: '', activeItemIndex }
   },
   [MenuActionTypes.Search]: (state, action) => {
+    let wasAlreadySearching = state.searchQuery !== ''
+    let offset = wasAlreadySearching ? 0 : 1
     let searchQuery = state.searchQuery + action.value.toLowerCase()
 
     let reOrderedItems =
       state.activeItemIndex !== null
         ? state.items
-            .slice(state.activeItemIndex + 1)
-            .concat(state.items.slice(0, state.activeItemIndex + 1))
+            .slice(state.activeItemIndex + offset)
+            .concat(state.items.slice(0, state.activeItemIndex + offset))
         : state.items
 
     let matchingItem = reOrderedItems.find(
@@ -583,9 +585,16 @@ function Item<TTag extends ElementType = typeof DEFAULT_ITEM_TAG>(
     if (state.menuState !== MenuStates.Open) return
     if (!active) return
     let d = disposables()
-    d.nextFrame(() => document.getElementById(id)?.scrollIntoView?.({ block: 'nearest' }))
+    d.requestAnimationFrame(() => {
+      document.getElementById(id)?.scrollIntoView?.({ block: 'nearest' })
+    })
     return d.dispose
-  }, [id, active, state.menuState])
+  }, [
+    id,
+    active,
+    state.menuState,
+    /* We also want to trigger this when the position of the active item changes so that we can re-trigger the scrollIntoView */ state.activeItemIndex,
+  ])
 
   let bag = useRef<MenuItemDataRef['current']>({ disabled })
 

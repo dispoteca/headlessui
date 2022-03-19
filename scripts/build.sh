@@ -14,13 +14,12 @@ tsc=$(yarn bin tsc)
 sharedOptions=()
 sharedOptions+=("--bundle")
 sharedOptions+=("--platform=browser")
-sharedOptions+=("--target=es2020")
+sharedOptions+=("--target=es2019")
 
 # Generate actual builds
-NODE_ENV=production  $esbuild $input --format=esm  --outfile=$outdir/$name.esm.js      --minify ${sharedOptions[@]} $@ &
-NODE_ENV=production  $esbuild $input --format=cjs  --outfile=$outdir/$name.prod.cjs.js --minify ${sharedOptions[@]} $@ &
-NODE_ENV=production  $esbuild $input --format=iife --outfile=$outdir/$name.iife.js     --minify ${sharedOptions[@]} $@ &
-NODE_ENV=development $esbuild $input --format=cjs  --outfile=$outdir/$name.dev.cjs.js           ${sharedOptions[@]} $@ &
+NODE_ENV=production  $esbuild $input --format=esm  --outfile=$outdir/$name.esm.js    --minify ${sharedOptions[@]} $@ &
+NODE_ENV=production  $esbuild $input --format=cjs  --outfile=$outdir/$name.prod.cjs  --minify ${sharedOptions[@]} $@ &
+NODE_ENV=development $esbuild $input --format=cjs  --outfile=$outdir/$name.dev.cjs            ${sharedOptions[@]} $@ &
 
 # Generate types
 tsc --emitDeclarationOnly --outDir $outdir &
