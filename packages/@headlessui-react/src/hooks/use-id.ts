@@ -13,7 +13,7 @@ function generateId() {
   return ++id
 }
 
-export let useId =
+export let useId: () => string =
   // Prefer React's `useId` if it's available.
   // @ts-expect-error - `useId` doesn't exist in React < 18.
   React.useId ??
