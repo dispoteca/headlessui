@@ -15,6 +15,7 @@ import React, {
   MouseEvent as ReactMouseEvent,
   MutableRefObject,
   Ref,
+  useEffect,
 } from 'react'
 
 import { useDisposables } from '../../hooks/use-disposables'
@@ -23,27 +24,40 @@ import { useIsoMorphicEffect } from '../../hooks/use-iso-morphic-effect'
 import { useComputed } from '../../hooks/use-computed'
 import { useSyncRefs } from '../../hooks/use-sync-refs'
 import { Props } from '../../types'
-import { Features, forwardRefWithAs, PropsForFeatures, render } from '../../utils/render'
+import { Features, forwardRefWithAs, PropsForFeatures, render, compact } from '../../utils/render'
 import { match } from '../../utils/match'
 import { disposables } from '../../utils/disposables'
 import { Keys } from '../keyboard'
 import { Focus, calculateActiveIndex } from '../../utils/calculate-active-index'
 import { isDisabledReactIssue7711 } from '../../utils/bugs'
-import { isFocusableElement, FocusableMode } from '../../utils/focus-management'
-import { useWindowEvent } from '../../hooks/use-window-event'
+import { isFocusableElement, FocusableMode, sortByDomNode } from '../../utils/focus-management'
 import { useOpenClosed, State, OpenClosedProvider } from '../../internal/open-closed'
 import { useResolveButtonType } from '../../hooks/use-resolve-button-type'
+import { useOutsideClick } from '../../hooks/use-outside-click'
+import { VisuallyHidden } from '../../internal/visually-hidden'
+import { objectToFormEntries } from '../../utils/form'
+import { getOwnerDocument } from '../../utils/owner'
 
 export enum ListboxStates {
   Open,
   Closed,
 }
 
+enum ValueMode {
+  Single,
+  Multi,
+}
+
+enum ActivationTrigger {
+  Pointer,
+  Other,
+}
+
 type ListboxOptionDataRef = MutableRefObject<{
   textValue?: string
   disabled: boolean
-  ordinal?: number
   value: unknown
+  domRef: MutableRefObject<HTMLElement | null>
 }>
 
 export interface ListboxStateDefinition {
@@ -55,6 +69,7 @@ export interface ListboxStateDefinition {
     value: unknown
     onChange(value: unknown): void
     onClose(state: ListboxStateDefinition, dispatch: Dispatch<ListboxActions>): void
+    mode: ValueMode
   }>
   labelRef: MutableRefObject<HTMLLabelElement | null>
   buttonRef: MutableRefObject<HTMLButtonElement | null>
@@ -65,6 +80,7 @@ export interface ListboxStateDefinition {
   options: { id: string; dataRef: ListboxOptionDataRef }[]
   searchQuery: string
   activeOptionIndex: number | null
+  activationTrigger: ActivationTrigger
 }
 
 export enum ListboxActionTypes {
@@ -83,14 +99,54 @@ export enum ListboxActionTypes {
   UnregisterOption,
 }
 
+function adjustOrderedState(
+  state: ListboxStateDefinition,
+  adjustment: (options: ListboxStateDefinition['options']) => ListboxStateDefinition['options'] = (
+    i
+  ) => i
+) {
+  let currentActiveOption =
+    state.activeOptionIndex !== null ? state.options[state.activeOptionIndex] : null
+
+  let sortedOptions = sortByDomNode(
+    adjustment(state.options.slice()),
+    (option) => option.dataRef.current.domRef.current
+  )
+
+  // If we inserted an option before the current active option then the active option index
+  // would be wrong. To fix this, we will re-lookup the correct index.
+  let adjustedActiveOptionIndex = currentActiveOption
+    ? sortedOptions.indexOf(currentActiveOption)
+    : null
+
+  // Reset to `null` in case the currentActiveOption was removed.
+  if (adjustedActiveOptionIndex === -1) {
+    adjustedActiveOptionIndex = null
+  }
+
+  return {
+    options: sortedOptions,
+    activeOptionIndex: adjustedActiveOptionIndex,
+  }
+}
+
 export type ListboxActions =
   | { type: ListboxActionTypes.CloseListbox }
   | { type: ListboxActionTypes.OpenListbox; enable?: boolean }
   | { type: ListboxActionTypes.SetAutoFocus; autoFocus: boolean }
   | { type: ListboxActionTypes.SetDisabled; disabled: boolean }
   | { type: ListboxActionTypes.SetOrientation; orientation: ListboxStateDefinition['orientation'] }
-  | { type: ListboxActionTypes.GoToOption; focus: Focus.Specific; id: string }
-  | { type: ListboxActionTypes.GoToOption; focus: Exclude<Focus, Focus.Specific> }
+  | {
+      type: ListboxActionTypes.GoToOption
+      focus: Focus.Specific
+      id: string
+      trigger?: ActivationTrigger
+    }
+  | {
+      type: ListboxActionTypes.GoToOption
+      focus: Exclude<Focus, Focus.Specific>
+      trigger?: ActivationTrigger
+    }
   | { type: ListboxActionTypes.Search; value: string }
   | { type: ListboxActionTypes.ClearSearch }
   | { type: ListboxActionTypes.RegisterOption; id: string; dataRef: ListboxOptionDataRef }
@@ -110,11 +166,25 @@ let reducers: {
   [ListboxActionTypes.OpenListbox](state, action) {
     if (state.disabled && !action.enable) return state
     if (state.listboxState === ListboxStates.Open) return state
-    return {
-      ...state,
-      disabled: action.enable ? false : state.disabled,
-      listboxState: ListboxStates.Open,
+
+    // Check if we have a selected value that we can make active
+    let activeOptionIndex = state.activeOptionIndex
+    let { value, mode } = state.propsRef.current
+    let optionIdx = state.options.findIndex((option) => {
+      let optionValue = option.dataRef.current.value
+      let selected = match(mode, {
+        [ValueMode.Multi]: () => (value as unknown[]).includes(optionValue),
+        [ValueMode.Single]: () => value === optionValue,
+      })
+
+      return selected
+    })
+
+    if (optionIdx !== -1) {
+      activeOptionIndex = optionIdx
     }
+
+    return { ...state, listboxState: ListboxStates.Open, activeOptionIndex }
   },
   [ListboxActionTypes.SetAutoFocus](state, action) {
     if (state.autoFocus === action.autoFocus) return state
@@ -139,15 +209,21 @@ let reducers: {
     if (state.disabled) return state
     if (state.listboxState === ListboxStates.Closed) return state
 
+    let adjustedState = adjustOrderedState(state)
     let activeOptionIndex = calculateActiveIndex(action, {
-      resolveItems: () => state.options,
-      resolveActiveIndex: () => state.activeOptionIndex,
-      resolveId: (item) => item.id,
-      resolveDisabled: (item) => item.dataRef.current.disabled,
+      resolveItems: () => adjustedState.options,
+      resolveActiveIndex: () => adjustedState.activeOptionIndex,
+      resolveId: (option) => option.id,
+      resolveDisabled: (option) => option.dataRef.current.disabled,
     })
 
-    if (state.searchQuery === '' && state.activeOptionIndex === activeOptionIndex) return state
-    return { ...state, searchQuery: '', activeOptionIndex }
+    return {
+      ...state,
+      ...adjustedState,
+      searchQuery: '',
+      activeOptionIndex,
+      activationTrigger: action.trigger ?? ActivationTrigger.Other,
+    }
   },
   [ListboxActionTypes.Search]: (state, action) => {
     if (state.disabled) return state
@@ -174,7 +250,12 @@ let reducers: {
     let matchIdx = matchingOption ? state.options.indexOf(matchingOption) : -1
 
     if (matchIdx === -1 || matchIdx === state.activeOptionIndex) return { ...state, searchQuery }
-    return { ...state, searchQuery, activeOptionIndex: matchIdx }
+    return {
+      ...state,
+      searchQuery,
+      activeOptionIndex: matchIdx,
+      activationTrigger: ActivationTrigger.Other,
+    }
   },
   [ListboxActionTypes.ClearSearch](state) {
     if (state.disabled) return state
@@ -183,39 +264,35 @@ let reducers: {
     return { ...state, searchQuery: '' }
   },
   [ListboxActionTypes.RegisterOption]: (state, action) => {
-    let orderMap = Array.from(
-      state.optionsRef.current?.querySelectorAll('[id^="headlessui-listbox-option-"]')!
-    ).reduce(
-      (lookup, element, index) => Object.assign(lookup, { [element.id]: index }),
-      {}
-    ) as Record<string, number>
+    let option = { id: action.id, dataRef: action.dataRef }
+    let adjustedState = adjustOrderedState(state, (options) => [...options, option])
 
-    let options = [...state.options, { id: action.id, dataRef: action.dataRef }].sort(
-      (a, z) => orderMap[a.id] - orderMap[z.id]
-    )
+    // Check if we need to make the newly registered option active.
+    if (state.activeOptionIndex === null) {
+      let { value, mode } = state.propsRef.current
+      let optionValue = action.dataRef.current.value
+      let selected = match(mode, {
+        [ValueMode.Multi]: () => (value as unknown[]).includes(optionValue),
+        [ValueMode.Single]: () => value === optionValue,
+      })
+      if (selected) {
+        adjustedState.activeOptionIndex = adjustedState.options.indexOf(option)
+      }
+    }
 
-    return { ...state, options }
+    return { ...state, ...adjustedState }
   },
   [ListboxActionTypes.UnregisterOption]: (state, action) => {
-    let nextOptions = state.options.slice()
-    let currentActiveOption =
-      state.activeOptionIndex !== null ? nextOptions[state.activeOptionIndex] : null
-
-    let idx = nextOptions.findIndex((a) => a.id === action.id)
-
-    if (idx !== -1) nextOptions.splice(idx, 1)
+    let adjustedState = adjustOrderedState(state, (options) => {
+      let idx = options.findIndex((a) => a.id === action.id)
+      if (idx !== -1) options.splice(idx, 1)
+      return options
+    })
 
     return {
       ...state,
-      options: nextOptions,
-      activeOptionIndex: (() => {
-        if (idx === state.activeOptionIndex) return null
-        if (currentActiveOption === null) return null
-
-        // If we removed the option before the actual active index, then it would be out of sync. To
-        // fix this, we will find the correct (new) index position.
-        return nextOptions.indexOf(currentActiveOption)
-      })(),
+      ...adjustedState,
+      activationTrigger: ActivationTrigger.Other,
     }
   },
 }
@@ -226,9 +303,7 @@ ListboxContext.displayName = 'ListboxContext'
 export function useListboxContext(component?: string) {
   let context = useContext(ListboxContext)
   if (context === null) {
-    let err = new Error(
-      `<${component ?? 'Unknown'} /> is missing a parent <${Listbox.name} /> component.`
-    )
+    let err = new Error(`<${component ?? 'Unknown'} /> is missing a parent <Listbox /> component.`)
     if (Error.captureStackTrace) Error.captureStackTrace(err, useListboxContext)
     throw err
   }
@@ -247,26 +322,40 @@ interface ListboxRenderPropArg {
   disabled: boolean
 }
 
-export function Listbox<TTag extends ElementType = typeof DEFAULT_LISTBOX_TAG, TType = string>(
-  props: Props<TTag, ListboxRenderPropArg, 'value' | 'onChange'> & {
+let ListboxRoot = forwardRefWithAs(function Listbox<
+  TTag extends ElementType = typeof DEFAULT_LISTBOX_TAG,
+  TType = string,
+  TActualType = TType extends (infer U)[] ? U : TType
+>(
+  props: Props<
+    TTag,
+    ListboxRenderPropArg,
+    'value' | 'onChange' | 'disabled' | 'horizontal' | 'name' | 'multiple'
+  > & {
     autoFocus?: boolean
     value: TType
     onChange(value: TType): void
     onClose?(state: ListboxStateDefinition, dispatch: Dispatch<ListboxActions>): void
     disabled?: boolean
     horizontal?: boolean
-  }
+    name?: string
+    multiple?: boolean
+  },
+  ref: Ref<TTag>
 ) {
   let {
     autoFocus = true,
     value,
+    name,
     onChange,
     onClose,
     disabled = false,
     horizontal = false,
-    ...passThroughProps
+    multiple = false,
+    ...theirProps
   } = props
   const orientation = horizontal ? 'horizontal' : 'vertical'
+  let listboxRef = useSyncRefs(ref)
 
   let onCloseCallback = useCallback(
     (state: ListboxStateDefinition, dispatch: Dispatch<ListboxActions>) => {
@@ -282,6 +371,7 @@ export function Listbox<TTag extends ElementType = typeof DEFAULT_LISTBOX_TAG, T
       current: {
         value,
         onChange,
+        mode: multiple ? ValueMode.Multi : ValueMode.Single,
         onClose: onCloseCallback,
       },
     },
@@ -294,6 +384,7 @@ export function Listbox<TTag extends ElementType = typeof DEFAULT_LISTBOX_TAG, T
     options: [],
     searchQuery: '',
     activeOptionIndex: null,
+    activationTrigger: ActivationTrigger.Other,
   } as ListboxStateDefinition)
   let [{ listboxState, propsRef, optionsRef, buttonRef }, dispatch] = reducerBag
 
@@ -301,11 +392,29 @@ export function Listbox<TTag extends ElementType = typeof DEFAULT_LISTBOX_TAG, T
     () => dispatch({ type: ListboxActionTypes.SetAutoFocus, autoFocus }),
     [autoFocus]
   )
+  propsRef.current.value = value
+  propsRef.current.mode = multiple ? ValueMode.Multi : ValueMode.Single
+
   useIsoMorphicEffect(() => {
-    propsRef.current.value = value
-  }, [value, propsRef])
-  useIsoMorphicEffect(() => {
-    propsRef.current.onChange = onChange
+    propsRef.current.onChange = (value: unknown) => {
+      return match(propsRef.current.mode, {
+        [ValueMode.Single]() {
+          return onChange(value as TType)
+        },
+        [ValueMode.Multi]() {
+          let copy = (propsRef.current.value as TActualType[]).slice()
+
+          let idx = copy.indexOf(value as TActualType)
+          if (idx === -1) {
+            copy.push(value as TActualType)
+          } else {
+            copy.splice(idx, 1)
+          }
+
+          return onChange(copy as unknown as TType)
+        },
+      })
+    }
   }, [onChange, propsRef])
   useIsoMorphicEffect(() => {
     propsRef.current.onClose = onCloseCallback
@@ -320,13 +429,8 @@ export function Listbox<TTag extends ElementType = typeof DEFAULT_LISTBOX_TAG, T
   )
 
   // Handle outside click
-  useWindowEvent('mousedown', (event) => {
-    let target = event.target as HTMLElement
-
+  useOutsideClick([buttonRef, optionsRef], (event, target) => {
     if (listboxState !== ListboxStates.Open) return
-
-    if (buttonRef.current?.contains(target)) return
-    if (optionsRef.current?.contains(target)) return
 
     dispatch({ type: ListboxActionTypes.CloseListbox })
 
@@ -341,6 +445,8 @@ export function Listbox<TTag extends ElementType = typeof DEFAULT_LISTBOX_TAG, T
     [listboxState, disabled]
   )
 
+  let ourProps = { ref: listboxRef }
+
   return (
     <ListboxContext.Provider value={reducerBag}>
       <OpenClosedProvider
@@ -349,16 +455,26 @@ export function Listbox<TTag extends ElementType = typeof DEFAULT_LISTBOX_TAG, T
           [ListboxStates.Closed]: State.Closed,
         })}
       >
-        {render({
-          props: passThroughProps,
-          slot,
-          defaultTag: DEFAULT_LISTBOX_TAG,
-          name: 'Listbox',
-        })}
+        {name != null &&
+          value != null &&
+          objectToFormEntries({ [name]: value }).map(([name, value]) => (
+            <VisuallyHidden
+              {...compact({
+                key: name,
+                as: 'input',
+                type: 'hidden',
+                hidden: true,
+                readOnly: true,
+                name,
+                value,
+              })}
+            />
+          ))}
+        {render({ ourProps, theirProps, slot, defaultTag: DEFAULT_LISTBOX_TAG, name: 'Listbox' })}
       </OpenClosedProvider>
     </ListboxContext.Provider>
   )
-}
+})
 
 // ---
 
@@ -451,8 +567,8 @@ let Button = forwardRefWithAs(function Button<TTag extends ElementType = typeof 
     () => ({ open: state.listboxState === ListboxStates.Open, disabled: state.disabled }),
     [state]
   )
-  let passthroughProps = props
-  let propsWeControl = {
+  let theirProps = props
+  let ourProps = {
     ref: buttonRef,
     id,
     type: useResolveButtonType(props, state.buttonRef),
@@ -467,7 +583,8 @@ let Button = forwardRefWithAs(function Button<TTag extends ElementType = typeof 
   }
 
   return render({
-    props: { ...passthroughProps, ...propsWeControl },
+    ourProps,
+    theirProps,
     slot,
     defaultTag: DEFAULT_BUTTON_TAG,
     name: 'Listbox.Button',
@@ -483,11 +600,13 @@ interface LabelRenderPropArg {
 }
 type LabelPropsWeControl = 'id' | 'ref' | 'onClick'
 
-function Label<TTag extends ElementType = typeof DEFAULT_LABEL_TAG>(
-  props: Props<TTag, LabelRenderPropArg, LabelPropsWeControl>
+let Label = forwardRefWithAs(function Label<TTag extends ElementType = typeof DEFAULT_LABEL_TAG>(
+  props: Props<TTag, LabelRenderPropArg, LabelPropsWeControl>,
+  ref: Ref<HTMLElement>
 ) {
   let [state, dispatch] = useListboxContext('Listbox.Label')
   let id = `headlessui-listbox-label-${useId()}`
+  let labelRef = useSyncRefs(state.labelRef, ref)
 
   let handleClick = useCallback(
     () => state.propsRef.current.onClose(state, dispatch),
@@ -498,14 +617,17 @@ function Label<TTag extends ElementType = typeof DEFAULT_LABEL_TAG>(
     () => ({ open: state.listboxState === ListboxStates.Open, disabled: state.disabled }),
     [state]
   )
-  let propsWeControl = { ref: state.labelRef, id, onClick: handleClick }
+  let theirProps = props
+  let ourProps = { ref: labelRef, id, onClick: handleClick }
+
   return render({
-    props: { ...props, ...propsWeControl },
+    ourProps,
+    theirProps,
     slot,
     defaultTag: DEFAULT_LABEL_TAG,
     name: 'Listbox.Label',
   })
-}
+})
 
 // ---
 
@@ -529,7 +651,7 @@ let Options = forwardRefWithAs(function Options<
 >(
   props: Props<TTag, OptionsRenderPropArg, OptionsPropsWeControl> &
     PropsForFeatures<typeof OptionsRenderFeatures>,
-  ref: Ref<HTMLUListElement>
+  ref: Ref<HTMLElement>
 ) {
   let [state, dispatch] = useListboxContext('Listbox.Options')
   let optionsRef = useSyncRefs(state.optionsRef, ref)
@@ -547,11 +669,11 @@ let Options = forwardRefWithAs(function Options<
     return state.listboxState === ListboxStates.Open
   })()
 
-  useIsoMorphicEffect(() => {
+  useEffect(() => {
     let container = state.optionsRef.current
     if (!container) return
     if (state.listboxState !== ListboxStates.Open) return
-    if (container === document.activeElement) return
+    if (container === getOwnerDocument(container)?.activeElement) return
     if (!state.autoFocus) return
 
     container.focus({ preventScroll: true })
@@ -575,12 +697,15 @@ let Options = forwardRefWithAs(function Options<
         case Keys.Enter:
           event.preventDefault()
           event.stopPropagation()
-          dispatch({ type: ListboxActionTypes.CloseListbox })
+
           if (state.activeOptionIndex !== null) {
             let { dataRef } = state.options[state.activeOptionIndex]
             state.propsRef.current.onChange(dataRef.current.value)
           }
-          disposables().nextFrame(() => state.propsRef.current.onClose(state, dispatch))
+          if (state.propsRef.current.mode === ValueMode.Single) {
+            dispatch({ type: ListboxActionTypes.CloseListbox })
+            disposables().nextFrame(() => state.propsRef.current.onClose(state, dispatch))
+          }
           break
 
         case match(state.orientation, { vertical: Keys.ArrowDown, horizontal: Keys.ArrowRight }):
@@ -639,9 +764,12 @@ let Options = forwardRefWithAs(function Options<
     () => ({ open: state.listboxState === ListboxStates.Open }),
     [state]
   )
-  let propsWeControl = {
+
+  let theirProps = props
+  let ourProps = {
     'aria-activedescendant':
       state.activeOptionIndex === null ? undefined : state.options[state.activeOptionIndex]?.id,
+    'aria-multiselectable': state.propsRef.current.mode === ValueMode.Multi ? true : undefined,
     'aria-labelledby': labelledby,
     'aria-orientation': state.orientation,
     id,
@@ -650,10 +778,10 @@ let Options = forwardRefWithAs(function Options<
     tabIndex: 0,
     ref: optionsRef,
   }
-  let passthroughProps = props
 
   return render({
-    props: { ...passthroughProps, ...propsWeControl },
+    ourProps,
+    theirProps,
     slot,
     defaultTag: DEFAULT_OPTIONS_TAG,
     features: OptionsRenderFeatures,
@@ -682,39 +810,53 @@ type ListboxOptionPropsWeControl =
   | 'onMouseMove'
   | 'onFocus'
 
-function Option<
+let Option = forwardRefWithAs(function Option<
   TTag extends ElementType = typeof DEFAULT_OPTION_TAG,
   // TODO: One day we will be able to infer this type from the generic in Listbox itself.
   // But today is not that day..
-  TType = Parameters<typeof Listbox>[0]['value']
+  TType = Parameters<typeof ListboxRoot>[0]['value']
 >(
   props: Props<TTag, OptionRenderPropArg, ListboxOptionPropsWeControl | 'value'> & {
     disabled?: boolean
-    ordinal?: number
     value: TType
-  }
+  },
+  ref: Ref<HTMLElement>
 ) {
-  let { disabled = false, ordinal, value, ...passthroughProps } = props
+  let { disabled = false, value, ...theirProps } = props
   let [state, dispatch] = useListboxContext('Listbox.Option')
   let id = `headlessui-listbox-option-${useId()}`
   let active =
     state.activeOptionIndex !== null ? state.options[state.activeOptionIndex].id === id : false
-  let selected = state.propsRef.current.value === value
+  let selected = match(state.propsRef.current.mode, {
+    [ValueMode.Multi]: () => (state.propsRef.current.value as TType[]).includes(value),
+    [ValueMode.Single]: () => state.propsRef.current.value === value,
+  })
 
-  let bag = useRef<ListboxOptionDataRef['current']>({ disabled, ordinal, value })
+  let internalOptionRef = useRef<HTMLLIElement | null>(null)
+  let optionRef = useSyncRefs(ref, internalOptionRef)
+
+  useIsoMorphicEffect(() => {
+    if (state.listboxState !== ListboxStates.Open) return
+    if (!active) return
+    if (state.activationTrigger === ActivationTrigger.Pointer) return
+    let d = disposables()
+    d.requestAnimationFrame(() => {
+      internalOptionRef.current?.scrollIntoView?.({ block: 'nearest' })
+    })
+    return d.dispose
+  }, [internalOptionRef, active, state.listboxState, state.activationTrigger, /* We also want to trigger this when the position of the active item changes so that we can re-trigger the scrollIntoView */ state.activeOptionIndex])
+
+  let bag = useRef<ListboxOptionDataRef['current']>({ disabled, value, domRef: internalOptionRef })
 
   useIsoMorphicEffect(() => {
     bag.current.disabled = disabled
   }, [bag, disabled])
   useIsoMorphicEffect(() => {
-    bag.current.ordinal = ordinal
-  }, [bag, ordinal])
-  useIsoMorphicEffect(() => {
     bag.current.value = value
   }, [bag, value])
   useIsoMorphicEffect(() => {
-    bag.current.textValue = document.getElementById(id)?.textContent?.toLowerCase()
-  }, [bag, id])
+    bag.current.textValue = internalOptionRef.current?.textContent?.toLowerCase()
+  }, [bag, internalOptionRef])
 
   let select = useCallback(() => state.propsRef.current.onChange(value), [state.propsRef, value])
 
@@ -723,35 +865,14 @@ function Option<
     return () => dispatch({ type: ListboxActionTypes.UnregisterOption, id })
   }, [bag, id])
 
-  useIsoMorphicEffect(() => {
-    if (state.listboxState !== ListboxStates.Open) return
-    if (!selected) return
-    dispatch({ type: ListboxActionTypes.GoToOption, focus: Focus.Specific, id })
-    if (!state.autoFocus) return
-    document.getElementById(id)?.focus?.()
-  }, [state.autoFocus, state.listboxState])
-
-  useIsoMorphicEffect(() => {
-    if (state.listboxState !== ListboxStates.Open) return
-    if (!active) return
-    let d = disposables()
-    d.requestAnimationFrame(() => {
-      document.getElementById(id)?.scrollIntoView?.({ block: 'nearest' })
-    })
-    return d.dispose
-  }, [
-    id,
-    active,
-    state.listboxState,
-    /* We also want to trigger this when the position of the active item changes so that we can re-trigger the scrollIntoView */ state.activeOptionIndex,
-  ])
-
   let handleClick = useCallback(
     (event: { preventDefault: Function }) => {
       if (disabled) return event.preventDefault()
       select()
-      dispatch({ type: ListboxActionTypes.CloseListbox })
-      disposables().nextFrame(() => state.propsRef.current.onClose(state, dispatch))
+      if (state.propsRef.current.mode === ValueMode.Single) {
+        dispatch({ type: ListboxActionTypes.CloseListbox })
+        disposables().nextFrame(() => state.propsRef.current.onClose(state, dispatch))
+      }
     },
     [dispatch, state.buttonRef, disabled, select]
   )
@@ -764,7 +885,12 @@ function Option<
   let handleMove = useCallback(() => {
     if (disabled) return
     if (active) return
-    dispatch({ type: ListboxActionTypes.GoToOption, focus: Focus.Specific, id })
+    dispatch({
+      type: ListboxActionTypes.GoToOption,
+      focus: Focus.Specific,
+      id,
+      trigger: ActivationTrigger.Pointer,
+    })
   }, [disabled, active, id, dispatch])
 
   let handleLeave = useCallback(() => {
@@ -777,11 +903,15 @@ function Option<
     () => ({ active, selected, disabled }),
     [active, selected, disabled]
   )
-  let propsWeControl = {
+  let ourProps = {
     id,
+    ref: optionRef,
     role: 'option',
     tabIndex: disabled === true ? undefined : -1,
     'aria-disabled': disabled === true ? true : undefined,
+    // According to the WAI-ARIA best practices, we should use aria-checked for
+    // multi-select,but Voice-Over disagrees. So we use aria-checked instead for
+    // both single and multi-select.
     'aria-selected': selected === true ? true : undefined,
     disabled: undefined, // Never forward the `disabled` prop
     onClick: handleClick,
@@ -793,16 +923,14 @@ function Option<
   }
 
   return render({
-    props: { ...passthroughProps, ...propsWeControl },
+    ourProps,
+    theirProps,
     slot,
     defaultTag: DEFAULT_OPTION_TAG,
     name: 'Listbox.Option',
   })
-}
+})
 
 // ---
 
-Listbox.Button = Button
-Listbox.Label = Label
-Listbox.Options = Options
-Listbox.Option = Option
+export let Listbox = Object.assign(ListboxRoot, { Button, Label, Options, Option })

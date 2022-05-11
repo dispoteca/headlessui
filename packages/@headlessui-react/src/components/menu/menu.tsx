@@ -31,18 +31,29 @@ import { useId } from '../../hooks/use-id'
 import { Keys } from '../keyboard'
 import { Focus, calculateActiveIndex } from '../../utils/calculate-active-index'
 import { isDisabledReactIssue7711 } from '../../utils/bugs'
-import { isFocusableElement, FocusableMode } from '../../utils/focus-management'
-import { useWindowEvent } from '../../hooks/use-window-event'
+import { isFocusableElement, FocusableMode, sortByDomNode } from '../../utils/focus-management'
+import { useOutsideClick } from '../../hooks/use-outside-click'
 import { useTreeWalker } from '../../hooks/use-tree-walker'
 import { useOpenClosed, State, OpenClosedProvider } from '../../internal/open-closed'
 import { useResolveButtonType } from '../../hooks/use-resolve-button-type'
+import { useOwnerDocument } from '../../hooks/use-owner'
 
 export enum MenuStates {
   Open,
   Closed,
 }
 
-type MenuItemDataRef = MutableRefObject<{ textValue?: string; disabled: boolean }>
+enum ActivationTrigger {
+  Pointer,
+  Other,
+}
+
+type MenuItemDataRef = MutableRefObject<{
+  textValue?: string
+  disabled: boolean
+  domRef: MutableRefObject<HTMLElement | null>
+}>
+
 type ShouldClose = (event: Event | SyntheticEvent) => boolean
 
 export interface MenuStateDefinition {
@@ -55,6 +66,7 @@ export interface MenuStateDefinition {
   }>
   searchQuery: string
   activeItemIndex: number | null
+  activationTrigger: ActivationTrigger
   shouldClose: ShouldClose
 }
 
@@ -70,11 +82,46 @@ export enum MenuActionTypes {
   SetShouldClose,
 }
 
+function adjustOrderedState(
+  state: MenuStateDefinition,
+  adjustment: (items: MenuStateDefinition['items']) => MenuStateDefinition['items'] = (i) => i
+) {
+  let currentActiveItem = state.activeItemIndex !== null ? state.items[state.activeItemIndex] : null
+
+  let sortedItems = sortByDomNode(
+    adjustment(state.items.slice()),
+    (item) => item.dataRef.current.domRef.current
+  )
+
+  // If we inserted an item before the current active item then the active item index
+  // would be wrong. To fix this, we will re-lookup the correct index.
+  let adjustedActiveItemIndex = currentActiveItem ? sortedItems.indexOf(currentActiveItem) : null
+
+  // Reset to `null` in case the currentActiveItem was removed.
+  if (adjustedActiveItemIndex === -1) {
+    adjustedActiveItemIndex = null
+  }
+
+  return {
+    items: sortedItems,
+    activeItemIndex: adjustedActiveItemIndex,
+  }
+}
+
 export type MenuActions =
   | { type: MenuActionTypes.CloseMenu }
   | { type: MenuActionTypes.OpenMenu }
-  | { type: MenuActionTypes.GoToItem; focus: Focus.Specific; id: string }
-  | { type: MenuActionTypes.GoToItem; focus: Exclude<Focus, Focus.Specific> }
+  | {
+      type: MenuActionTypes.GoToItem
+      focus: Focus.Specific
+      id: string
+      trigger?: ActivationTrigger
+    }
+  | {
+      type: MenuActionTypes.GoToItem
+      focus: Exclude<Focus, Focus.Specific>
+      trigger?: ActivationTrigger
+    }
   | { type: MenuActionTypes.Search; value: string }
   | { type: MenuActionTypes.ClearSearch }
   | { type: MenuActionTypes.RegisterItem; id: string; dataRef: MenuItemDataRef }
@@ -96,15 +143,21 @@ let reducers: {
     return { ...state, menuState: MenuStates.Open }
   },
   [MenuActionTypes.GoToItem]: (state, action) => {
+    let adjustedState = adjustOrderedState(state)
     let activeItemIndex = calculateActiveIndex(action, {
-      resolveItems: () => state.items,
-      resolveActiveIndex: () => state.activeItemIndex,
+      resolveItems: () => adjustedState.items,
+      resolveActiveIndex: () => adjustedState.activeItemIndex,
       resolveId: (item) => item.id,
       resolveDisabled: (item) => item.dataRef.current.disabled,
     })
 
-    if (state.searchQuery === '' && state.activeItemIndex === activeItemIndex) return state
-    return { ...state, searchQuery: '', activeItemIndex }
+    return {
+      ...state,
+      ...adjustedState,
+      searchQuery: '',
+      activeItemIndex,
+      activationTrigger: action.trigger ?? ActivationTrigger.Other,
+    }
   },
   [MenuActionTypes.Search]: (state, action) => {
     let wasAlreadySearching = state.searchQuery !== ''
@@ -125,45 +178,36 @@ let reducers: {
 
     let matchIdx = matchingItem ? state.items.indexOf(matchingItem) : -1
     if (matchIdx === -1 || matchIdx === state.activeItemIndex) return { ...state, searchQuery }
-    return { ...state, searchQuery, activeItemIndex: matchIdx }
+    return {
+      ...state,
+      searchQuery,
+      activeItemIndex: matchIdx,
+      activationTrigger: ActivationTrigger.Other,
+    }
   },
   [MenuActionTypes.ClearSearch](state) {
     if (state.searchQuery === '') return state
     return { ...state, searchQuery: '', searchActiveItemIndex: null }
   },
   [MenuActionTypes.RegisterItem]: (state, action) => {
-    let orderMap = Array.from(
-      state.itemsRef.current?.querySelectorAll('[id^="headlessui-menu-item-"]')!
-    ).reduce(
-      (lookup, element, index) => Object.assign(lookup, { [element.id]: index }),
-      {}
-    ) as Record<string, number>
+    let adjustedState = adjustOrderedState(state, (items) => [
+      ...items,
+      { id: action.id, dataRef: action.dataRef },
+    ])
 
-    let items = [...state.items, { id: action.id, dataRef: action.dataRef }].sort(
-      (a, z) => orderMap[a.id] - orderMap[z.id]
-    )
-
-    return { ...state, items }
+    return { ...state, ...adjustedState }
   },
   [MenuActionTypes.UnregisterItem]: (state, action) => {
-    let nextItems = state.items.slice()
-    let currentActiveItem = state.activeItemIndex !== null ? nextItems[state.activeItemIndex] : null
-
-    let idx = nextItems.findIndex((a) => a.id === action.id)
-
-    if (idx !== -1) nextItems.splice(idx, 1)
+    let adjustedState = adjustOrderedState(state, (items) => {
+      let idx = items.findIndex((a) => a.id === action.id)
+      if (idx !== -1) items.splice(idx, 1)
+      return items
+    })
 
     return {
       ...state,
-      items: nextItems,
-      activeItemIndex: (() => {
-        if (idx === state.activeItemIndex) return null
-        if (currentActiveItem === null) return null
-
-        // If we removed the item before the actual active index, then it would be out of sync. To
-        // fix this, we will find the correct (new) index position.
-        return nextItems.indexOf(currentActiveItem)
-      })(),
+      ...adjustedState,
+      activationTrigger: ActivationTrigger.Other,
     }
   },
   [MenuActionTypes.SetShouldClose]: (state, action) => {
@@ -181,9 +225,7 @@ MenuContext.displayName = 'MenuContext'
 export function useMenuContext(component?: string) {
   let context = useContext(MenuContext)
   if (context === null) {
-    let err = new Error(
-      `<${component ?? 'Unknown'} /> is missing a parent <${Menu.name} /> component.`
-    )
+    let err = new Error(`<${component ?? 'Unknown'} /> is missing a parent <Menu /> component.`)
     if (Error.captureStackTrace) Error.captureStackTrace(err, useMenuContext)
     throw err
   }
@@ -201,14 +243,14 @@ interface MenuRenderPropArg {
   open: boolean
 }
 
-export function Menu<TTag extends ElementType = typeof DEFAULT_MENU_TAG>({
-  onClose,
-  shouldClose,
-  ...rest
-}: Props<TTag, MenuRenderPropArg> & {
-  onClose?: (state: MenuStateDefinition, dispatch: Dispatch<MenuActions>) => void
-  shouldClose?: ShouldClose
-}) {
+let MenuRoot = forwardRefWithAs(function Menu<TTag extends ElementType = typeof DEFAULT_MENU_TAG>(
+  props: Props<TTag, MenuRenderPropArg> & {
+    onClose?: (state: MenuStateDefinition, dispatch: Dispatch<MenuActions>) => void
+    shouldClose?: ShouldClose
+  },
+  ref: Ref<HTMLElement>
+) {
+  let { onClose, shouldClose, ...theirProps } = props
   let d = useDisposables()
 
   let onCloseCallback = useCallback(
@@ -227,22 +269,19 @@ export function Menu<TTag extends ElementType = typeof DEFAULT_MENU_TAG>({
     propsRef: { current: { onClose: onCloseCallback } },
     searchQuery: '',
     activeItemIndex: null,
+    activationTrigger: ActivationTrigger.Other,
     shouldClose: shouldClose ?? (() => true),
   } as MenuStateDefinition)
   let [{ menuState, itemsRef, buttonRef, propsRef }, dispatch] = reducerBag
+  let menuRef = useSyncRefs(ref)
 
   useIsoMorphicEffect(() => {
     propsRef.current.onClose = onCloseCallback
   }, [onCloseCallback, propsRef])
 
   // Handle outside click
-  useWindowEvent('mousedown', (event) => {
-    let target = event.target as HTMLElement
-
+  useOutsideClick([buttonRef, itemsRef], (event, target) => {
     if (menuState !== MenuStates.Open) return
-
-    if (buttonRef.current?.contains(target)) return
-    if (itemsRef.current?.contains(target)) return
 
     if (!shouldClose || shouldClose(event)) {
       dispatch({ type: MenuActionTypes.CloseMenu })
@@ -263,6 +302,8 @@ export function Menu<TTag extends ElementType = typeof DEFAULT_MENU_TAG>({
     dispatch({ type: MenuActionTypes.SetShouldClose, shouldClose })
   }, [shouldClose])
 
+  let ourProps = { ref: menuRef }
+
   return (
     <MenuContext.Provider value={reducerBag}>
       <OpenClosedProvider
@@ -271,11 +312,17 @@ export function Menu<TTag extends ElementType = typeof DEFAULT_MENU_TAG>({
           [MenuStates.Closed]: State.Closed,
         })}
       >
-        {render({ props: rest, slot, defaultTag: DEFAULT_MENU_TAG, name: 'Menu' })}
+        {render({
+          ourProps,
+          theirProps,
+          slot,
+          defaultTag: DEFAULT_MENU_TAG,
+          name: 'Menu',
+        })}
       </OpenClosedProvider>
     </MenuContext.Provider>
   )
-}
+})
 
 // ---
 
@@ -360,8 +407,8 @@ let Button = forwardRefWithAs(function Button<TTag extends ElementType = typeof 
     () => ({ open: state.menuState === MenuStates.Open }),
     [state]
   )
-  let passthroughProps = props
-  let propsWeControl = {
+  let theirProps = props
+  let ourProps = {
     ref: buttonRef,
     id,
     type: useResolveButtonType(props, state.buttonRef),
@@ -374,7 +421,8 @@ let Button = forwardRefWithAs(function Button<TTag extends ElementType = typeof 
   }
 
   return render({
-    props: { ...passthroughProps, ...propsWeControl },
+    ourProps,
+    theirProps,
     slot,
     defaultTag: DEFAULT_BUTTON_TAG,
     name: 'Menu.Button',
@@ -404,6 +452,7 @@ let Items = forwardRefWithAs(function Items<TTag extends ElementType = typeof DE
 ) {
   let [state, dispatch] = useMenuContext('Menu.Items')
   let itemsRef = useSyncRefs(state.itemsRef, ref)
+  let ownerDocument = useOwnerDocument(state.itemsRef)
 
   let id = `headlessui-menu-items-${useId()}`
   let searchDisposables = useDisposables()
@@ -421,10 +470,10 @@ let Items = forwardRefWithAs(function Items<TTag extends ElementType = typeof DE
     let container = state.itemsRef.current
     if (!container) return
     if (state.menuState !== MenuStates.Open) return
-    if (container === document.activeElement) return
+    if (container === ownerDocument?.activeElement) return
 
     container.focus({ preventScroll: true })
-  }, [state.menuState, state.itemsRef])
+  }, [state.menuState, state.itemsRef, ownerDocument])
 
   useTreeWalker({
     container: state.itemsRef.current,
@@ -460,8 +509,8 @@ let Items = forwardRefWithAs(function Items<TTag extends ElementType = typeof DE
             event.stopPropagation()
             dispatch({ type: MenuActionTypes.CloseMenu })
             if (state.activeItemIndex !== null) {
-              let { id } = state.items[state.activeItemIndex]
-              document.getElementById(id)?.click()
+              let { dataRef } = state.items[state.activeItemIndex]
+              dataRef.current?.domRef.current?.click()
             }
             state.propsRef.current.onClose(state, dispatch)
           }
@@ -511,7 +560,7 @@ let Items = forwardRefWithAs(function Items<TTag extends ElementType = typeof DE
           break
       }
     },
-    [dispatch, searchDisposables, state]
+    [dispatch, searchDisposables, state, ownerDocument]
   )
 
   let handleKeyUp = useCallback((event: ReactKeyboardEvent<HTMLButtonElement>) => {
@@ -529,7 +578,9 @@ let Items = forwardRefWithAs(function Items<TTag extends ElementType = typeof DE
     () => ({ open: state.menuState === MenuStates.Open }),
     [state]
   )
-  let propsWeControl = {
+
+  let theirProps = props
+  let ourProps = {
     'aria-activedescendant':
       state.activeItemIndex === null ? undefined : state.items[state.activeItemIndex]?.id,
     'aria-labelledby': state.buttonRef.current?.id,
@@ -540,10 +591,10 @@ let Items = forwardRefWithAs(function Items<TTag extends ElementType = typeof DE
     tabIndex: 0,
     ref: itemsRef,
   }
-  let passthroughProps = props
 
   return render({
-    props: { ...passthroughProps, ...propsWeControl },
+    ourProps,
+    theirProps,
     slot,
     defaultTag: DEFAULT_ITEMS_TAG,
     features: ItemsRenderFeatures,
@@ -570,41 +621,38 @@ type MenuItemPropsWeControl =
   | 'onMouseMove'
   | 'onFocus'
 
-function Item<TTag extends ElementType = typeof DEFAULT_ITEM_TAG>(
+let Item = forwardRefWithAs(function Item<TTag extends ElementType = typeof DEFAULT_ITEM_TAG>(
   props: Props<TTag, ItemRenderPropArg, MenuItemPropsWeControl> & {
     disabled?: boolean
-    onClick?: (event: { preventDefault: Function }) => void
-  }
+  },
+  ref: Ref<HTMLElement>
 ) {
-  let { disabled = false, onClick, ...passthroughProps } = props
+  let { disabled = false, ...theirProps } = props
   let [state, dispatch] = useMenuContext('Menu.Item')
   let id = `headlessui-menu-item-${useId()}`
   let active = state.activeItemIndex !== null ? state.items[state.activeItemIndex].id === id : false
+  let internalItemRef = useRef<HTMLElement | null>(null)
+  let itemRef = useSyncRefs(ref, internalItemRef)
 
   useIsoMorphicEffect(() => {
     if (state.menuState !== MenuStates.Open) return
     if (!active) return
+    if (state.activationTrigger === ActivationTrigger.Pointer) return
     let d = disposables()
     d.requestAnimationFrame(() => {
-      document.getElementById(id)?.scrollIntoView?.({ block: 'nearest' })
+      internalItemRef.current?.scrollIntoView?.({ block: 'nearest' })
     })
     return d.dispose
-  }, [
-    id,
-    active,
-    state.menuState,
-    /* We also want to trigger this when the position of the active item changes so that we can re-trigger the scrollIntoView */ state.activeItemIndex,
-  ])
+  }, [internalItemRef, active, state.menuState, state.activationTrigger, /* We also want to trigger this when the position of the active item changes so that we can re-trigger the scrollIntoView */ state.activeItemIndex])
 
-  let bag = useRef<MenuItemDataRef['current']>({ disabled })
+  let bag = useRef<MenuItemDataRef['current']>({ disabled, domRef: internalItemRef })
 
   useIsoMorphicEffect(() => {
     bag.current.disabled = disabled
   }, [bag, disabled])
-
   useIsoMorphicEffect(() => {
-    bag.current.textValue = document.getElementById(id)?.textContent?.toLowerCase()
-  }, [bag, id])
+    bag.current.textValue = internalItemRef.current?.textContent?.toLowerCase()
+  }, [bag, internalItemRef])
 
   useIsoMorphicEffect(() => {
     dispatch({ type: MenuActionTypes.RegisterItem, id, dataRef: bag })
@@ -618,9 +666,8 @@ function Item<TTag extends ElementType = typeof DEFAULT_ITEM_TAG>(
         dispatch({ type: MenuActionTypes.CloseMenu })
         state.propsRef.current.onClose(state, dispatch)
       }
-      if (onClick) return onClick(event)
     },
-    [dispatch, state.buttonRef, disabled, onClick]
+    [dispatch, state.buttonRef, disabled]
   )
 
   let handleFocus = useCallback(() => {
@@ -631,7 +678,12 @@ function Item<TTag extends ElementType = typeof DEFAULT_ITEM_TAG>(
   let handleMove = useCallback(() => {
     if (disabled) return
     if (active) return
-    dispatch({ type: MenuActionTypes.GoToItem, focus: Focus.Specific, id })
+    dispatch({
+      type: MenuActionTypes.GoToItem,
+      focus: Focus.Specific,
+      id,
+      trigger: ActivationTrigger.Pointer,
+    })
   }, [disabled, active, id, dispatch])
 
   let handleLeave = useCallback(() => {
@@ -641,8 +693,9 @@ function Item<TTag extends ElementType = typeof DEFAULT_ITEM_TAG>(
   }, [disabled, active, dispatch])
 
   let slot = useMemo<ItemRenderPropArg>(() => ({ active, disabled }), [active, disabled])
-  let propsWeControl = {
+  let ourProps = {
     id,
+    ref: itemRef,
     role: 'menuitem',
     tabIndex: disabled === true ? undefined : -1,
     'aria-disabled': disabled === true ? true : undefined,
@@ -656,15 +709,14 @@ function Item<TTag extends ElementType = typeof DEFAULT_ITEM_TAG>(
   }
 
   return render({
-    props: { ...passthroughProps, ...propsWeControl },
+    ourProps,
+    theirProps,
     slot,
     defaultTag: DEFAULT_ITEM_TAG,
     name: 'Menu.Item',
   })
-}
+})
 
 // ---
 
-Menu.Button = Button
-Menu.Items = Items
-Menu.Item = Item
+export let Menu = Object.assign(MenuRoot, { Button, Items, Item })

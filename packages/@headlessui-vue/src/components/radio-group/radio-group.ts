@@ -1,6 +1,8 @@
 import {
+  Fragment,
   computed,
   defineComponent,
+  h,
   inject,
   onMounted,
   onUnmounted,
@@ -15,12 +17,15 @@ import {
 } from 'vue'
 import { dom } from '../../utils/dom'
 import { Keys } from '../../keyboard'
-import { focusIn, Focus, FocusResult } from '../../utils/focus-management'
+import { focusIn, Focus, FocusResult, sortByDomNode } from '../../utils/focus-management'
 import { useId } from '../../hooks/use-id'
-import { omit, render } from '../../utils/render'
+import { compact, omit, render } from '../../utils/render'
 import { Label, useLabels } from '../label/label'
 import { Description, useDescriptions } from '../description/description'
 import { useTreeWalker } from '../../hooks/use-tree-walker'
+import { VisuallyHidden } from '../../internal/visually-hidden'
+import { attemptSubmit, objectToFormEntries } from '../../utils/form'
+import { getOwnerDocument } from '../../utils/owner'
 
 interface Option {
   id: string
@@ -65,12 +70,16 @@ export let RadioGroup = defineComponent({
     as: { type: [Object, String], default: 'div' },
     disabled: { type: [Boolean], default: false },
     modelValue: { type: [Object, String, Number, Boolean] },
+    name: { type: String, optional: true },
   },
-  setup(props, { emit, attrs, slots }) {
+  inheritAttrs: false,
+  setup(props, { emit, attrs, slots, expose }) {
     let radioGroupRef = ref<HTMLElement | null>(null)
     let options = ref<StateDefinition['options']['value']>([])
     let labelledby = useLabels({ name: 'RadioGroupLabel' })
     let describedby = useDescriptions({ name: 'RadioGroupDescription' })
+
+    expose({ el: radioGroupRef, $el: radioGroupRef })
 
     let value = computed(() => props.modelValue)
 
@@ -98,15 +107,8 @@ export let RadioGroup = defineComponent({
         return true
       },
       registerOption(action: UnwrapRef<Option>) {
-        let orderMap = Array.from(
-          radioGroupRef.value?.querySelectorAll('[id^="headlessui-radiogroup-option-"]')!
-        ).reduce(
-          (lookup, element, index) => Object.assign(lookup, { [element.id]: index }),
-          {}
-        ) as Record<string, number>
-
         options.value.push(action)
-        options.value.sort((a, z) => orderMap[a.id] - orderMap[z.id])
+        options.value = sortByDomNode(options.value, (option) => option.element)
       },
       unregisterOption(id: Option['id']) {
         let idx = options.value.findIndex((radio) => radio.id === id)
@@ -139,6 +141,9 @@ export let RadioGroup = defineComponent({
         .map((radio) => radio.element) as HTMLElement[]
 
       switch (event.key) {
+        case Keys.Enter:
+          attemptSubmit(event.currentTarget as unknown as EventTarget & HTMLButtonElement)
+          break
         case Keys.ArrowLeft:
         case Keys.ArrowUp:
           {
@@ -149,7 +154,7 @@ export let RadioGroup = defineComponent({
 
             if (result === FocusResult.Success) {
               let activeOption = options.value.find(
-                (option) => option.element === document.activeElement
+                (option) => option.element === getOwnerDocument(radioGroupRef)?.activeElement
               )
               if (activeOption) api.change(activeOption.propsRef.value)
             }
@@ -166,7 +171,7 @@ export let RadioGroup = defineComponent({
 
             if (result === FocusResult.Success) {
               let activeOption = options.value.find(
-                (option) => option.element === document.activeElement
+                (option) => option.element === getOwnerDocument(option.element)?.activeElement
               )
               if (activeOption) api.change(activeOption.propsRef.value)
             }
@@ -179,7 +184,7 @@ export let RadioGroup = defineComponent({
             event.stopPropagation()
 
             let activeOption = options.value.find(
-              (option) => option.element === document.activeElement
+              (option) => option.element === getOwnerDocument(option.element)?.activeElement
             )
             if (activeOption) api.change(activeOption.propsRef.value)
           }
@@ -190,9 +195,9 @@ export let RadioGroup = defineComponent({
     let id = `headlessui-radiogroup-${useId()}`
 
     return () => {
-      let { modelValue, disabled, ...passThroughProps } = props
+      let { modelValue, disabled, name, ...incomingProps } = props
 
-      let propsWeControl = {
+      let ourProps = {
         ref: radioGroupRef,
         id,
         role: 'radiogroup',
@@ -201,13 +206,31 @@ export let RadioGroup = defineComponent({
         onKeydown: handleKeyDown,
       }
 
-      return render({
-        props: { ...passThroughProps, ...propsWeControl },
-        slot: {},
-        attrs,
-        slots,
-        name: 'RadioGroup',
-      })
+      return h(Fragment, [
+        ...(name != null && modelValue != null
+          ? objectToFormEntries({ [name]: modelValue }).map(([name, value]) =>
+              h(
+                VisuallyHidden,
+                compact({
+                  key: name,
+                  as: 'input',
+                  type: 'hidden',
+                  hidden: true,
+                  readOnly: true,
+                  name,
+                  value,
+                })
+              )
+            )
+          : []),
+        render({
+          props: { ...attrs, ...incomingProps, ...ourProps },
+          slot: {},
+          attrs,
+          slots,
+          name: 'RadioGroup',
+        }),
+      ])
     }
   },
 })
@@ -226,7 +249,7 @@ export let RadioGroupOption = defineComponent({
     value: { type: [Object, String, Number, Boolean] },
     disabled: { type: Boolean, default: false },
   },
-  setup(props, { attrs, slots }) {
+  setup(props, { attrs, slots, expose }) {
     let api = useRadioGroupContext('RadioGroupOption')
     let id = `headlessui-radiogroup-option-${useId()}`
     let labelledby = useLabels({ name: 'RadioGroupLabel' })
@@ -235,6 +258,8 @@ export let RadioGroupOption = defineComponent({
     let optionRef = ref<HTMLElement | null>(null)
     let propsRef = computed(() => ({ value: props.value, disabled: props.disabled }))
     let state = ref(OptionState.Empty)
+
+    expose({ el: optionRef, $el: optionRef })
 
     onMounted(() => api.registerOption({ id, element: optionRef, propsRef }))
     onUnmounted(() => api.unregisterOption(id))
@@ -265,7 +290,7 @@ export let RadioGroupOption = defineComponent({
     }
 
     return () => {
-      let passThroughProps = omit(props, ['value', 'disabled'])
+      let incomingProps = omit(props, ['value', 'disabled'])
 
       let slot = {
         checked: checked.value,
@@ -273,7 +298,7 @@ export let RadioGroupOption = defineComponent({
         active: Boolean(state.value & OptionState.Active),
       }
 
-      let propsWeControl = {
+      let ourProps = {
         id,
         ref: optionRef,
         role: 'radio',
@@ -288,7 +313,7 @@ export let RadioGroupOption = defineComponent({
       }
 
       return render({
-        props: { ...passThroughProps, ...propsWeControl },
+        props: { ...incomingProps, ...ourProps },
         slot,
         attrs,
         slots,

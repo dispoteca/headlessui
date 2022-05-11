@@ -1,6 +1,8 @@
 import {
+  Fragment,
   computed,
   defineComponent,
+  h,
   inject,
   nextTick,
   onMounted,
@@ -10,33 +12,56 @@ import {
   toRaw,
   watch,
   watchEffect,
+
+  // Types
   ComputedRef,
   InjectionKey,
   PropType,
   Ref,
+  UnwrapNestedRefs,
 } from 'vue'
 
-import { Features, render, omit } from '../../utils/render'
+import { Features, render, omit, compact } from '../../utils/render'
 import { useId } from '../../hooks/use-id'
 import { Keys } from '../../keyboard'
 import { calculateActiveIndex, Focus } from '../../utils/calculate-active-index'
 import { dom } from '../../utils/dom'
-import { useWindowEvent } from '../../hooks/use-window-event'
 import { useOpenClosed, State, useOpenClosedProvider } from '../../internal/open-closed'
 import { match } from '../../utils/match'
 import { useResolveButtonType } from '../../hooks/use-resolve-button-type'
 import { useTreeWalker } from '../../hooks/use-tree-walker'
+import { sortByDomNode } from '../../utils/focus-management'
+import { useOutsideClick } from '../../hooks/use-outside-click'
+import { VisuallyHidden } from '../../internal/visually-hidden'
+import { objectToFormEntries } from '../../utils/form'
 
 enum ComboboxStates {
   Open,
   Closed,
 }
 
-type ComboboxOptionDataRef = Ref<{ disabled: boolean; value: unknown }>
+enum ValueMode {
+  Single,
+  Multi,
+}
+
+enum ActivationTrigger {
+  Pointer,
+  Other,
+}
+
+type ComboboxOptionData = {
+  disabled: boolean
+  value: unknown
+  domRef: Ref<HTMLElement | null>
+}
 type StateDefinition = {
   // State
   comboboxState: Ref<ComboboxStates>
   value: ComputedRef<unknown>
+
+  mode: ComputedRef<ValueMode>
+  nullable: ComputedRef<boolean>
 
   inputPropsRef: Ref<{ displayValue?: (item: unknown) => string }>
   optionsPropsRef: Ref<{ static: boolean; hold: boolean }>
@@ -47,16 +72,18 @@ type StateDefinition = {
   optionsRef: Ref<HTMLDivElement | null>
 
   disabled: Ref<boolean>
-  options: Ref<{ id: string; dataRef: ComboboxOptionDataRef }[]>
+  options: Ref<{ id: string; dataRef: ComputedRef<ComboboxOptionData> }[]>
   activeOptionIndex: Ref<number | null>
+  activationTrigger: Ref<ActivationTrigger>
 
   // State mutators
   closeCombobox(): void
   openCombobox(): void
-  goToOption(focus: Focus, id?: string): void
+  goToOption(focus: Focus, id?: string, trigger?: ActivationTrigger): void
+  change(value: unknown): void
   selectOption(id: string): void
   selectActiveOption(): void
-  registerOption(id: string, dataRef: ComboboxOptionDataRef): void
+  registerOption(id: string, dataRef: ComputedRef<ComboboxOptionData>): void
   unregisterOption(id: string): void
   select(value: unknown): void
 }
@@ -84,7 +111,11 @@ export let Combobox = defineComponent({
     as: { type: [Object, String], default: 'template' },
     disabled: { type: [Boolean], default: false },
     modelValue: { type: [Object, String, Number, Boolean] },
+    name: { type: String },
+    nullable: { type: Boolean, default: false },
+    multiple: { type: [Boolean], default: false },
   },
+  inheritAttrs: false,
   setup(props, { slots, attrs, emit }) {
     let comboboxState = ref<StateDefinition['comboboxState']['value']>(ComboboxStates.Closed)
     let labelRef = ref<StateDefinition['labelRef']['value']>(null)
@@ -99,66 +130,161 @@ export let Combobox = defineComponent({
     }) as StateDefinition['optionsPropsRef']
     let options = ref<StateDefinition['options']['value']>([])
     let activeOptionIndex = ref<StateDefinition['activeOptionIndex']['value']>(null)
+    let activationTrigger = ref<StateDefinition['activationTrigger']['value']>(
+      ActivationTrigger.Other
+    )
+    let defaultToFirstOption = ref(false)
+
+    function adjustOrderedState(
+      adjustment: (
+        options: UnwrapNestedRefs<StateDefinition['options']['value']>
+      ) => UnwrapNestedRefs<StateDefinition['options']['value']> = (i) => i
+    ) {
+      let currentActiveOption =
+        activeOptionIndex.value !== null ? options.value[activeOptionIndex.value] : null
+
+      let sortedOptions = sortByDomNode(adjustment(options.value.slice()), (option) =>
+        dom(option.dataRef.domRef)
+      )
+
+      // If we inserted an option before the current active option then the active option index
+      // would be wrong. To fix this, we will re-lookup the correct index.
+      let adjustedActiveOptionIndex = currentActiveOption
+        ? sortedOptions.indexOf(currentActiveOption)
+        : null
+
+      // Reset to `null` in case the currentActiveOption was removed.
+      if (adjustedActiveOptionIndex === -1) {
+        adjustedActiveOptionIndex = null
+      }
+
+      return {
+        options: sortedOptions,
+        activeOptionIndex: adjustedActiveOptionIndex,
+      }
+    }
 
     let value = computed(() => props.modelValue)
+    let mode = computed(() => (props.multiple ? ValueMode.Multi : ValueMode.Single))
+    let nullable = computed(() => props.nullable)
 
     let api = {
       comboboxState,
       value,
+      mode,
+      nullable,
       inputRef,
       labelRef,
       buttonRef,
       optionsRef,
       disabled: computed(() => props.disabled),
       options,
-      activeOptionIndex,
+      change(value: unknown) {
+        emit('update:modelValue', value)
+      },
+      activeOptionIndex: computed(() => {
+        if (
+          defaultToFirstOption.value &&
+          activeOptionIndex.value === null &&
+          options.value.length > 0
+        ) {
+          let localActiveOptionIndex = options.value.findIndex((option) => !option.dataRef.disabled)
+          if (localActiveOptionIndex !== -1) {
+            return localActiveOptionIndex
+          }
+        }
+
+        return activeOptionIndex.value
+      }),
+      activationTrigger,
       inputPropsRef: ref<StateDefinition['inputPropsRef']['value']>({ displayValue: undefined }),
       optionsPropsRef,
       closeCombobox() {
+        defaultToFirstOption.value = false
+
         if (props.disabled) return
         if (comboboxState.value === ComboboxStates.Closed) return
         comboboxState.value = ComboboxStates.Closed
         activeOptionIndex.value = null
       },
       openCombobox() {
+        defaultToFirstOption.value = true
+
         if (props.disabled) return
         if (comboboxState.value === ComboboxStates.Open) return
+
+        // Check if we have a selected value that we can make active.
+        let optionIdx = options.value.findIndex((option) => {
+          let optionValue = toRaw(option.dataRef.value)
+          let selected = match(mode.value, {
+            [ValueMode.Single]: () => toRaw(api.value.value) === toRaw(optionValue),
+            [ValueMode.Multi]: () =>
+              (toRaw(api.value.value) as unknown[]).includes(toRaw(optionValue)),
+          })
+
+          return selected
+        })
+
+        if (optionIdx !== -1) {
+          activeOptionIndex.value = optionIdx
+        }
+
         comboboxState.value = ComboboxStates.Open
       },
-      goToOption(focus: Focus, id?: string) {
+      goToOption(focus: Focus, id?: string, trigger?: ActivationTrigger) {
+        defaultToFirstOption.value = false
+
         if (props.disabled) return
         if (
           optionsRef.value &&
           !optionsPropsRef.value.static &&
           comboboxState.value === ComboboxStates.Closed
-        )
+        ) {
           return
+        }
+
+        let adjustedState = adjustOrderedState()
+
+        // It's possible that the activeOptionIndex is set to `null` internally, but
+        // this means that we will fallback to the first non-disabled option by default.
+        // We have to take this into account.
+        if (adjustedState.activeOptionIndex === null) {
+          let localActiveOptionIndex = adjustedState.options.findIndex(
+            (option) => !option.dataRef.disabled
+          )
+
+          if (localActiveOptionIndex !== -1) {
+            adjustedState.activeOptionIndex = localActiveOptionIndex
+          }
+        }
 
         let nextActiveOptionIndex = calculateActiveIndex(
           focus === Focus.Specific
             ? { focus: Focus.Specific, id: id! }
             : { focus: focus as Exclude<Focus, Focus.Specific> },
           {
-            resolveItems: () => options.value,
-            resolveActiveIndex: () => activeOptionIndex.value,
+            resolveItems: () => adjustedState.options,
+            resolveActiveIndex: () => adjustedState.activeOptionIndex,
             resolveId: (option) => option.id,
             resolveDisabled: (option) => option.dataRef.disabled,
           }
         )
 
-        if (activeOptionIndex.value === nextActiveOptionIndex) return
         activeOptionIndex.value = nextActiveOptionIndex
+        activationTrigger.value = trigger ?? ActivationTrigger.Other
+        options.value = adjustedState.options
       },
       syncInputValue() {
         let value = api.value.value
         if (!dom(api.inputRef)) return
-        if (value === undefined) return
         let displayValue = api.inputPropsRef.value.displayValue
 
         if (typeof displayValue === 'function') {
-          api.inputRef!.value!.value = displayValue(value)
+          api.inputRef!.value!.value = displayValue(value) ?? ''
         } else if (typeof value === 'string') {
           api.inputRef!.value!.value = value
+        } else {
+          api.inputRef!.value!.value = ''
         }
       },
       selectOption(id: string) {
@@ -166,70 +292,115 @@ export let Combobox = defineComponent({
         if (!option) return
 
         let { dataRef } = option
-        emit('update:modelValue', dataRef.value)
+        emit(
+          'update:modelValue',
+          match(mode.value, {
+            [ValueMode.Single]: () => dataRef.value,
+            [ValueMode.Multi]: () => {
+              let copy = toRaw(api.value.value as unknown[]).slice()
+              let raw = toRaw(dataRef.value)
+
+              let idx = copy.indexOf(raw)
+              if (idx === -1) {
+                copy.push(raw)
+              } else {
+                copy.splice(idx, 1)
+              }
+
+              return copy
+            },
+          })
+        )
         api.syncInputValue()
       },
       selectActiveOption() {
-        if (activeOptionIndex.value === null) return
+        if (api.activeOptionIndex.value === null) return
 
-        let { dataRef } = options.value[activeOptionIndex.value]
-        emit('update:modelValue', dataRef.value)
-        api.syncInputValue()
-      },
-      registerOption(id: string, dataRef: ComboboxOptionDataRef) {
-        let currentActiveOption =
-          activeOptionIndex.value !== null ? options.value[activeOptionIndex.value] : null
-        let orderMap = Array.from(
-          optionsRef.value?.querySelectorAll('[id^="headlessui-combobox-option-"]') ?? []
-        ).reduce(
-          (lookup, element, index) => Object.assign(lookup, { [element.id]: index }),
-          {}
-        ) as Record<string, number>
+        let { dataRef, id } = options.value[api.activeOptionIndex.value]
+        emit(
+          'update:modelValue',
+          match(mode.value, {
+            [ValueMode.Single]: () => dataRef.value,
+            [ValueMode.Multi]: () => {
+              let copy = toRaw(api.value.value as unknown[]).slice()
+              let raw = toRaw(dataRef.value)
 
-        // @ts-expect-error The expected type comes from property 'dataRef' which is declared here on type '{ id: string; dataRef: { textValue: string; disabled: boolean; }; }'
-        options.value = [...options.value, { id, dataRef }].sort(
-          (a, z) => orderMap[a.id] - orderMap[z.id]
+              let idx = copy.indexOf(raw)
+              if (idx === -1) {
+                copy.push(raw)
+              } else {
+                copy.splice(idx, 1)
+              }
+
+              return copy
+            },
+          })
         )
+        api.syncInputValue()
 
-        // If we inserted an option before the current active option then the
-        // active option index would be wrong. To fix this, we will re-lookup
-        // the correct index.
-        activeOptionIndex.value = (() => {
-          if (currentActiveOption === null) return null
-          return options.value.indexOf(currentActiveOption)
-        })()
+        // It could happen that the `activeOptionIndex` stored in state is actually null,
+        // but we are getting the fallback active option back instead.
+        api.goToOption(Focus.Specific, id)
+      },
+      registerOption(id: string, dataRef: ComboboxOptionData) {
+        let option = { id, dataRef }
+        let adjustedState = adjustOrderedState((options) => [...options, option])
+
+        // Check if we have a selected value that we can make active.
+        if (activeOptionIndex.value === null) {
+          let optionValue = (dataRef.value as any).value
+          let selected = match(mode.value, {
+            [ValueMode.Single]: () => toRaw(api.value.value) === toRaw(optionValue),
+            [ValueMode.Multi]: () =>
+              (toRaw(api.value.value) as unknown[]).includes(toRaw(optionValue)),
+          })
+
+          if (selected) {
+            adjustedState.activeOptionIndex = adjustedState.options.indexOf(option)
+          }
+        }
+
+        options.value = adjustedState.options
+        activeOptionIndex.value = adjustedState.activeOptionIndex
+        activationTrigger.value = ActivationTrigger.Other
       },
       unregisterOption(id: string) {
-        let nextOptions = options.value.slice()
-        let currentActiveOption =
-          activeOptionIndex.value !== null ? nextOptions[activeOptionIndex.value] : null
-        let idx = nextOptions.findIndex((a) => a.id === id)
-        if (idx !== -1) nextOptions.splice(idx, 1)
-        options.value = nextOptions
-        activeOptionIndex.value = (() => {
-          if (idx === activeOptionIndex.value) return null
-          if (currentActiveOption === null) return null
+        let adjustedState = adjustOrderedState((options) => {
+          let idx = options.findIndex((a) => a.id === id)
+          if (idx !== -1) options.splice(idx, 1)
+          return options
+        })
 
-          // If we removed the option before the actual active index, then it would be out of sync. To
-          // fix this, we will find the correct (new) index position.
-          return nextOptions.indexOf(currentActiveOption)
-        })()
+        options.value = adjustedState.options
+        activeOptionIndex.value = adjustedState.activeOptionIndex
+        activationTrigger.value = ActivationTrigger.Other
       },
     }
 
-    useWindowEvent('mousedown', (event) => {
-      let target = event.target as HTMLElement
-
+    // Handle outside click
+    useOutsideClick([inputRef, buttonRef, optionsRef], () => {
       if (comboboxState.value !== ComboboxStates.Open) return
-
-      if (dom(inputRef)?.contains(target)) return
-      if (dom(buttonRef)?.contains(target)) return
-      if (dom(optionsRef)?.contains(target)) return
-
       api.closeCombobox()
     })
 
-    watch([api.value, api.inputRef], () => api.syncInputValue(), { immediate: true })
+    watch([api.value, api.inputRef], () => api.syncInputValue(), {
+      immediate: true,
+    })
+
+    // Only sync the input value on close as typing into the input will trigger it to open
+    // causing a resync of the input value with the currently stored, stale value that is
+    // one character behind since the input's value has just been updated by the browser
+    watch(
+      api.comboboxState,
+      (state) => {
+        if (state === ComboboxStates.Closed) {
+          api.syncInputValue()
+        }
+      },
+      {
+        immediate: true,
+      }
+    )
 
     // @ts-expect-error Types of property 'dataRef' are incompatible.
     provide(ComboboxContext, api)
@@ -243,26 +414,48 @@ export let Combobox = defineComponent({
     )
 
     let activeOption = computed(() =>
-      activeOptionIndex.value === null
+      api.activeOptionIndex.value === null
         ? null
-        : (options.value[activeOptionIndex.value].dataRef.value as any)
+        : (options.value[api.activeOptionIndex.value].dataRef.value as any)
     )
 
     return () => {
+      let { name, modelValue, disabled, ...incomingProps } = props
       let slot = {
         open: comboboxState.value === ComboboxStates.Open,
-        disabled: props.disabled,
-        activeIndex: activeOptionIndex.value,
+        disabled,
+        activeIndex: api.activeOptionIndex.value,
         activeOption: activeOption.value,
       }
 
-      return render({
-        props: omit(props, ['modelValue', 'onUpdate:modelValue', 'disabled']),
-        slot,
-        slots,
-        attrs,
-        name: 'Combobox',
-      })
+      return h(Fragment, [
+        ...(name != null && modelValue != null
+          ? objectToFormEntries({ [name]: modelValue }).map(([name, value]) =>
+              h(
+                VisuallyHidden,
+                compact({
+                  key: name,
+                  as: 'input',
+                  type: 'hidden',
+                  hidden: true,
+                  readOnly: true,
+                  name,
+                  value,
+                })
+              )
+            )
+          : []),
+        render({
+          props: {
+            ...attrs,
+            ...omit(incomingProps, ['nullable', 'multiple', 'onUpdate:modelValue']),
+          },
+          slot,
+          slots,
+          attrs,
+          name: 'Combobox',
+        }),
+      ])
     }
   },
 })
@@ -286,10 +479,10 @@ export let ComboboxLabel = defineComponent({
         disabled: api.disabled.value,
       }
 
-      let propsWeControl = { id, ref: api.labelRef, onClick: handleClick }
+      let ourProps = { id, ref: api.labelRef, onClick: handleClick }
 
       return render({
-        props: { ...props, ...propsWeControl },
+        props: { ...props, ...ourProps },
         slot,
         attrs,
         slots,
@@ -306,9 +499,11 @@ export let ComboboxButton = defineComponent({
   props: {
     as: { type: [Object, String], default: 'button' },
   },
-  setup(props, { attrs, slots }) {
+  setup(props, { attrs, slots, expose }) {
     let api = useComboboxContext('ComboboxButton')
     let id = `headlessui-combobox-button-${useId()}`
+
+    expose({ el: api.buttonRef, $el: api.buttonRef })
 
     function handleClick(event: MouseEvent) {
       if (api.disabled.value) return
@@ -382,7 +577,7 @@ export let ComboboxButton = defineComponent({
         open: api.comboboxState.value === ComboboxStates.Open,
         disabled: api.disabled.value,
       }
-      let propsWeControl = {
+      let ourProps = {
         ref: api.buttonRef,
         id,
         type: type.value,
@@ -399,7 +594,7 @@ export let ComboboxButton = defineComponent({
       }
 
       return render({
-        props: { ...props, ...propsWeControl },
+        props: { ...props, ...ourProps },
         slot,
         attrs,
         slots,
@@ -422,21 +617,50 @@ export let ComboboxInput = defineComponent({
   emits: {
     change: (_value: Event & { target: HTMLInputElement }) => true,
   },
-  setup(props, { emit, attrs, slots }) {
+  setup(props, { emit, attrs, slots, expose }) {
     let api = useComboboxContext('ComboboxInput')
     let id = `headlessui-combobox-input-${useId()}`
     api.inputPropsRef = computed(() => props)
+
+    expose({ el: api.inputRef, $el: api.inputRef })
 
     function handleKeyDown(event: KeyboardEvent) {
       switch (event.key) {
         // Ref: https://www.w3.org/TR/wai-aria-practices-1.2/#keyboard-interaction-12
 
+        case Keys.Backspace:
+        case Keys.Delete:
+          if (api.mode.value !== ValueMode.Single) return
+          if (!api.nullable.value) return
+
+          let input = event.currentTarget as HTMLInputElement
+          requestAnimationFrame(() => {
+            if (input.value === '') {
+              api.change(null)
+              let options = dom(api.optionsRef)
+              if (options) {
+                options.scrollTop = 0
+              }
+              api.goToOption(Focus.Nothing)
+            }
+          })
+          break
+
         case Keys.Enter:
+          if (api.comboboxState.value !== ComboboxStates.Open) return
+
           event.preventDefault()
           event.stopPropagation()
 
+          if (api.activeOptionIndex.value === null) {
+            api.closeCombobox()
+            return
+          }
+
           api.selectActiveOption()
-          api.closeCombobox()
+          if (api.mode.value === ValueMode.Single) {
+            api.closeCombobox()
+          }
           break
 
         case Keys.ArrowDown:
@@ -497,33 +721,38 @@ export let ComboboxInput = defineComponent({
     }
 
     function handleChange(event: Event & { target: HTMLInputElement }) {
+      emit('change', event)
+    }
+
+    function handleInput(event: Event & { target: HTMLInputElement }) {
       api.openCombobox()
       emit('change', event)
     }
 
     return () => {
       let slot = { open: api.comboboxState.value === ComboboxStates.Open }
-      let propsWeControl = {
+      let ourProps = {
         'aria-controls': api.optionsRef.value?.id,
         'aria-expanded': api.disabled ? undefined : api.comboboxState.value === ComboboxStates.Open,
         'aria-activedescendant':
           api.activeOptionIndex.value === null
             ? undefined
             : api.options.value[api.activeOptionIndex.value]?.id,
+        'aria-multiselectable': api.mode.value === ValueMode.Multi ? true : undefined,
         'aria-labelledby': dom(api.labelRef)?.id ?? dom(api.buttonRef)?.id,
         id,
         onKeydown: handleKeyDown,
         onChange: handleChange,
-        onInput: handleChange,
+        onInput: handleInput,
         role: 'combobox',
         type: 'text',
         tabIndex: 0,
         ref: api.inputRef,
       }
-      let passThroughProps = omit(props, ['displayValue'])
+      let incomingProps = omit(props, ['displayValue'])
 
       return render({
-        props: { ...passThroughProps, ...propsWeControl },
+        props: { ...incomingProps, ...ourProps },
         slot,
         attrs,
         slots,
@@ -544,15 +773,20 @@ export let ComboboxOptions = defineComponent({
     unmount: { type: Boolean, default: true },
     hold: { type: [Boolean], default: false },
   },
-  setup(props, { attrs, slots }) {
+  setup(props, { attrs, slots, expose }) {
     let api = useComboboxContext('ComboboxOptions')
     let id = `headlessui-combobox-options-${useId()}`
+
+    expose({ el: api.optionsRef, $el: api.optionsRef })
+
     watchEffect(() => {
       api.optionsPropsRef.value.static = props.static
     })
+
     watchEffect(() => {
       api.optionsPropsRef.value.hold = props.hold
     })
+
     let usesOpenClosedState = useOpenClosed()
     let visible = computed(() => {
       if (usesOpenClosedState !== null) {
@@ -577,7 +811,7 @@ export let ComboboxOptions = defineComponent({
 
     return () => {
       let slot = { open: api.comboboxState.value === ComboboxStates.Open }
-      let propsWeControl = {
+      let ourProps = {
         'aria-activedescendant':
           api.activeOptionIndex.value === null
             ? undefined
@@ -587,10 +821,10 @@ export let ComboboxOptions = defineComponent({
         ref: api.optionsRef,
         role: 'listbox',
       }
-      let passThroughProps = omit(props, ['hold'])
+      let incomingProps = omit(props, ['hold'])
 
       return render({
-        props: { ...passThroughProps, ...propsWeControl },
+        props: { ...incomingProps, ...ourProps },
         slot,
         attrs,
         slots,
@@ -609,9 +843,12 @@ export let ComboboxOption = defineComponent({
     value: { type: [Object, String, Number, Boolean] },
     disabled: { type: Boolean, default: false },
   },
-  setup(props, { slots, attrs }) {
+  setup(props, { slots, attrs, expose }) {
     let api = useComboboxContext('ComboboxOption')
     let id = `headlessui-combobox-option-${useId()}`
+    let internalOptionRef = ref<HTMLElement | null>(null)
+
+    expose({ el: internalOptionRef, $el: internalOptionRef })
 
     let active = computed(() => {
       return api.activeOptionIndex.value !== null
@@ -619,39 +856,36 @@ export let ComboboxOption = defineComponent({
         : false
     })
 
-    let selected = computed(() => toRaw(api.value.value) === toRaw(props.value))
+    let selected = computed(() =>
+      match(api.mode.value, {
+        [ValueMode.Single]: () => toRaw(api.value.value) === toRaw(props.value),
+        [ValueMode.Multi]: () => (toRaw(api.value.value) as unknown[]).includes(toRaw(props.value)),
+      })
+    )
 
-    let dataRef = computed<ComboboxOptionDataRef['value']>(() => ({
+    let dataRef = computed<ComboboxOptionData>(() => ({
       disabled: props.disabled,
       value: props.value,
+      domRef: internalOptionRef,
     }))
 
     onMounted(() => api.registerOption(id, dataRef))
     onUnmounted(() => api.unregisterOption(id))
 
-    onMounted(() => {
-      watch(
-        [api.comboboxState, selected],
-        () => {
-          if (api.comboboxState.value !== ComboboxStates.Open) return
-          if (!selected.value) return
-          api.goToOption(Focus.Specific, id)
-        },
-        { immediate: true }
-      )
-    })
-
     watchEffect(() => {
       if (api.comboboxState.value !== ComboboxStates.Open) return
       if (!active.value) return
-      nextTick(() => document.getElementById(id)?.scrollIntoView?.({ block: 'nearest' }))
+      if (api.activationTrigger.value === ActivationTrigger.Pointer) return
+      nextTick(() => dom(internalOptionRef)?.scrollIntoView?.({ block: 'nearest' }))
     })
 
     function handleClick(event: MouseEvent) {
       if (props.disabled) return event.preventDefault()
       api.selectOption(id)
-      api.closeCombobox()
-      nextTick(() => dom(api.inputRef)?.focus({ preventScroll: true }))
+      if (api.mode.value === ValueMode.Single) {
+        api.closeCombobox()
+        nextTick(() => dom(api.inputRef)?.focus({ preventScroll: true }))
+      }
     }
 
     function handleFocus() {
@@ -662,7 +896,7 @@ export let ComboboxOption = defineComponent({
     function handleMove() {
       if (props.disabled) return
       if (active.value) return
-      api.goToOption(Focus.Specific, id)
+      api.goToOption(Focus.Specific, id, ActivationTrigger.Pointer)
     }
 
     function handleLeave() {
@@ -675,11 +909,15 @@ export let ComboboxOption = defineComponent({
     return () => {
       let { disabled } = props
       let slot = { active: active.value, selected: selected.value, disabled }
-      let propsWeControl = {
+      let ourProps = {
         id,
+        ref: internalOptionRef,
         role: 'option',
         tabIndex: disabled === true ? undefined : -1,
         'aria-disabled': disabled === true ? true : undefined,
+        // According to the WAI-ARIA best practices, we should use aria-checked for
+        // multi-select,but Voice-Over disagrees. So we use aria-checked instead for
+        // both single and multi-select.
         'aria-selected': selected.value === true ? selected.value : undefined,
         disabled: undefined, // Never forward the `disabled` prop
         onClick: handleClick,
@@ -691,7 +929,7 @@ export let ComboboxOption = defineComponent({
       }
 
       return render({
-        props: { ...props, ...propsWeControl },
+        props: { ...props, ...ourProps },
         slot,
         attrs,
         slots,

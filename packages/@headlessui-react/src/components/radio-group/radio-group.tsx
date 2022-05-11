@@ -11,19 +11,24 @@ import React, {
   MutableRefObject,
   KeyboardEvent as ReactKeyboardEvent,
   ContextType,
+  Ref,
 } from 'react'
 
 import { Props, Expand } from '../../types'
-import { render } from '../../utils/render'
+import { forwardRefWithAs, render, compact } from '../../utils/render'
 import { useId } from '../../hooks/use-id'
 import { match } from '../../utils/match'
 import { useIsoMorphicEffect } from '../../hooks/use-iso-morphic-effect'
 import { Keys } from '../../components/keyboard'
-import { focusIn, Focus, FocusResult } from '../../utils/focus-management'
+import { focusIn, Focus, FocusResult, sortByDomNode } from '../../utils/focus-management'
 import { useFlags } from '../../hooks/use-flags'
 import { Label, useLabels } from '../../components/label/label'
 import { Description, useDescriptions } from '../../components/description/description'
 import { useTreeWalker } from '../../hooks/use-tree-walker'
+import { useSyncRefs } from '../../hooks/use-sync-refs'
+import { VisuallyHidden } from '../../internal/visually-hidden'
+import { attemptSubmit, objectToFormEntries } from '../../utils/form'
+import { getOwnerDocument } from '../../utils/owner'
 
 interface Option {
   id: string
@@ -51,12 +56,14 @@ let reducers: {
   ) => StateDefinition
 } = {
   [ActionTypes.RegisterOption](state, action) {
+    let nextOptions = [
+      ...state.options,
+      { id: action.id, element: action.element, propsRef: action.propsRef },
+    ]
+
     return {
       ...state,
-      options: [
-        ...state.options,
-        { id: action.id, element: action.element, propsRef: action.propsRef },
-      ],
+      options: sortByDomNode(nextOptions, (option) => option.element.current),
     }
   },
   [ActionTypes.UnregisterOption](state, action) {
@@ -81,7 +88,7 @@ RadioGroupContext.displayName = 'RadioGroupContext'
 function useRadioGroupContext(component: string) {
   let context = useContext(RadioGroupContext)
   if (context === null) {
-    let err = new Error(`<${component} /> is missing a parent <${RadioGroup.name} /> component.`)
+    let err = new Error(`<${component} /> is missing a parent <RadioGroup /> component.`)
     if (Error.captureStackTrace) Error.captureStackTrace(err, useRadioGroupContext)
     throw err
   }
@@ -98,28 +105,31 @@ let DEFAULT_RADIO_GROUP_TAG = 'div' as const
 interface RadioGroupRenderPropArg {}
 type RadioGroupPropsWeControl = 'role' | 'aria-labelledby' | 'aria-describedby' | 'id'
 
-export function RadioGroup<
+let RadioGroupRoot = forwardRefWithAs(function RadioGroup<
   TTag extends ElementType = typeof DEFAULT_RADIO_GROUP_TAG,
   TType = string
 >(
   props: Props<
     TTag,
     RadioGroupRenderPropArg,
-    RadioGroupPropsWeControl | 'value' | 'onChange' | 'disabled'
+    RadioGroupPropsWeControl | 'value' | 'onChange' | 'disabled' | 'name'
   > & {
     value: TType
     onChange(value: TType): void
     disabled?: boolean
-  }
+    name?: string
+  },
+  ref: Ref<HTMLElement>
 ) {
-  let { value, onChange, disabled = false, ...passThroughProps } = props
+  let { value, name, onChange, disabled = false, ...theirProps } = props
   let [{ options }, dispatch] = useReducer(stateReducer, {
     options: [],
   } as StateDefinition)
   let [labelledby, LabelProvider] = useLabels()
   let [describedby, DescriptionProvider] = useDescriptions()
   let id = `headlessui-radiogroup-${useId()}`
-  let radioGroupRef = useRef<HTMLElement | null>(null)
+  let internalRadioGroupRef = useRef<HTMLElement | null>(null)
+  let radioGroupRef = useSyncRefs(internalRadioGroupRef, ref)
 
   let firstOption = useMemo(
     () =>
@@ -149,7 +159,7 @@ export function RadioGroup<
   )
 
   useTreeWalker({
-    container: radioGroupRef.current,
+    container: internalRadioGroupRef.current,
     accept(node) {
       if (node.getAttribute('role') === 'radio') return NodeFilter.FILTER_REJECT
       if (node.hasAttribute('role')) return NodeFilter.FILTER_SKIP
@@ -162,14 +172,19 @@ export function RadioGroup<
 
   let handleKeyDown = useCallback(
     (event: ReactKeyboardEvent<HTMLButtonElement>) => {
-      let container = radioGroupRef.current
+      let container = internalRadioGroupRef.current
       if (!container) return
+
+      let ownerDocument = getOwnerDocument(container)
 
       let all = options
         .filter((option) => option.propsRef.current.disabled === false)
         .map((radio) => radio.element.current) as HTMLElement[]
 
       switch (event.key) {
+        case Keys.Enter:
+          attemptSubmit(event.currentTarget)
+          break
         case Keys.ArrowLeft:
         case Keys.ArrowUp:
           {
@@ -180,7 +195,7 @@ export function RadioGroup<
 
             if (result === FocusResult.Success) {
               let activeOption = options.find(
-                (option) => option.element.current === document.activeElement
+                (option) => option.element.current === ownerDocument?.activeElement
               )
               if (activeOption) triggerChange(activeOption.propsRef.current.value)
             }
@@ -197,7 +212,7 @@ export function RadioGroup<
 
             if (result === FocusResult.Success) {
               let activeOption = options.find(
-                (option) => option.element.current === document.activeElement
+                (option) => option.element.current === ownerDocument?.activeElement
               )
               if (activeOption) triggerChange(activeOption.propsRef.current.value)
             }
@@ -210,14 +225,14 @@ export function RadioGroup<
             event.stopPropagation()
 
             let activeOption = options.find(
-              (option) => option.element.current === document.activeElement
+              (option) => option.element.current === ownerDocument?.activeElement
             )
             if (activeOption) triggerChange(activeOption.propsRef.current.value)
           }
           break
       }
     },
-    [radioGroupRef, options, triggerChange]
+    [internalRadioGroupRef, options, triggerChange]
   )
 
   let registerOption = useCallback(
@@ -240,7 +255,7 @@ export function RadioGroup<
     [registerOption, firstOption, containsCheckedOption, triggerChange, disabled, value]
   )
 
-  let propsWeControl = {
+  let ourProps = {
     ref: radioGroupRef,
     id,
     role: 'radiogroup',
@@ -253,8 +268,25 @@ export function RadioGroup<
     <DescriptionProvider name="RadioGroup.Description">
       <LabelProvider name="RadioGroup.Label">
         <RadioGroupContext.Provider value={api}>
+          {name != null &&
+            value != null &&
+            objectToFormEntries({ [name]: value }).map(([name, value]) => (
+              <VisuallyHidden
+                {...compact({
+                  key: name,
+                  as: 'input',
+                  type: 'radio',
+                  checked: value != null,
+                  hidden: true,
+                  readOnly: true,
+                  name,
+                  value,
+                })}
+              />
+            ))}
           {render({
-            props: { ...passThroughProps, ...propsWeControl },
+            ourProps,
+            theirProps,
             defaultTag: DEFAULT_RADIO_GROUP_TAG,
             name: 'RadioGroup',
           })}
@@ -262,7 +294,7 @@ export function RadioGroup<
       </LabelProvider>
     </DescriptionProvider>
   )
-}
+})
 
 // ---
 
@@ -287,25 +319,27 @@ type RadioPropsWeControl =
   | 'role'
   | 'tabIndex'
 
-function Option<
+let Option = forwardRefWithAs(function Option<
   TTag extends ElementType = typeof DEFAULT_OPTION_TAG,
   // TODO: One day we will be able to infer this type from the generic in RadioGroup itself.
   // But today is not that day..
-  TType = Parameters<typeof RadioGroup>[0]['value']
+  TType = Parameters<typeof RadioGroupRoot>[0]['value']
 >(
   props: Props<TTag, OptionRenderPropArg, RadioPropsWeControl | 'value' | 'disabled'> & {
     value: TType
     disabled?: boolean
-  }
+  },
+  ref: Ref<HTMLElement>
 ) {
-  let optionRef = useRef<HTMLElement | null>(null)
+  let internalOptionRef = useRef<HTMLElement | null>(null)
+  let optionRef = useSyncRefs(internalOptionRef, ref)
   let id = `headlessui-radiogroup-option-${useId()}`
 
   let [labelledby, LabelProvider] = useLabels()
   let [describedby, DescriptionProvider] = useDescriptions()
   let { addFlag, removeFlag, hasFlag } = useFlags(OptionState.Empty)
 
-  let { value, disabled = false, ...passThroughProps } = props
+  let { value, disabled = false, ...theirProps } = props
   let propsRef = useRef({ value, disabled })
 
   useIsoMorphicEffect(() => {
@@ -325,15 +359,15 @@ function Option<
   } = useRadioGroupContext('RadioGroup.Option')
 
   useIsoMorphicEffect(
-    () => registerOption({ id, element: optionRef, propsRef }),
-    [id, registerOption, optionRef, props]
+    () => registerOption({ id, element: internalOptionRef, propsRef }),
+    [id, registerOption, internalOptionRef, props]
   )
 
   let handleClick = useCallback(() => {
     if (!change(value)) return
 
     addFlag(OptionState.Active)
-    optionRef.current?.focus()
+    internalOptionRef.current?.focus()
   }, [addFlag, change, value])
 
   let handleFocus = useCallback(() => addFlag(OptionState.Active), [addFlag])
@@ -343,7 +377,7 @@ function Option<
   let isDisabled = radioGroupDisabled || disabled
 
   let checked = radioGroupValue === value
-  let propsWeControl = {
+  let ourProps = {
     ref: optionRef,
     id,
     role: 'radio',
@@ -370,7 +404,8 @@ function Option<
     <DescriptionProvider name="RadioGroup.Description">
       <LabelProvider name="RadioGroup.Label">
         {render({
-          props: { ...passThroughProps, ...propsWeControl },
+          ourProps,
+          theirProps,
           slot,
           defaultTag: DEFAULT_OPTION_TAG,
           name: 'RadioGroup.Option',
@@ -378,10 +413,8 @@ function Option<
       </LabelProvider>
     </DescriptionProvider>
   )
-}
+})
 
 // ---
 
-RadioGroup.Option = Option
-RadioGroup.Label = Label
-RadioGroup.Description = Description
+export let RadioGroup = Object.assign(RadioGroupRoot, { Option, Label, Description })

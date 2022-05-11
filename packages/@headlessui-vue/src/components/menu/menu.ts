@@ -10,44 +10,57 @@ import {
   InjectionKey,
   Ref,
   watchEffect,
+  ComputedRef,
+  UnwrapNestedRefs,
 } from 'vue'
 import { Features, render } from '../../utils/render'
 import { useId } from '../../hooks/use-id'
 import { Keys } from '../../keyboard'
 import { Focus, calculateActiveIndex } from '../../utils/calculate-active-index'
 import { dom } from '../../utils/dom'
-import { useWindowEvent } from '../../hooks/use-window-event'
 import { useTreeWalker } from '../../hooks/use-tree-walker'
 import { useOpenClosedProvider, State, useOpenClosed } from '../../internal/open-closed'
 import { match } from '../../utils/match'
 import { useResolveButtonType } from '../../hooks/use-resolve-button-type'
+import { FocusableMode, isFocusableElement, sortByDomNode } from '../../utils/focus-management'
+import { useOutsideClick } from '../../hooks/use-outside-click'
 
 enum MenuStates {
   Open,
   Closed,
 }
 
+enum ActivationTrigger {
+  Pointer,
+  Other,
+}
+
 function nextFrame(cb: () => void) {
   requestAnimationFrame(() => requestAnimationFrame(cb))
 }
 
-type MenuItemDataRef = Ref<{ textValue: string; disabled: boolean }>
+type MenuItemData = {
+  textValue: string
+  disabled: boolean
+  domRef: Ref<HTMLElement | null>
+}
 type StateDefinition = {
   // State
   menuState: Ref<MenuStates>
   buttonRef: Ref<HTMLButtonElement | null>
   itemsRef: Ref<HTMLDivElement | null>
-  items: Ref<{ id: string; dataRef: MenuItemDataRef }[]>
+  items: Ref<{ id: string; dataRef: ComputedRef<MenuItemData> }[]>
   searchQuery: Ref<string>
   activeItemIndex: Ref<number | null>
+  activationTrigger: Ref<ActivationTrigger>
 
   // State mutators
   closeMenu(): void
   openMenu(): void
-  goToItem(focus: Focus, id?: string): void
+  goToItem(focus: Focus, id?: string, trigger?: ActivationTrigger): void
   search(value: string): void
   clearSearch(): void
-  registerItem(id: string, dataRef: MenuItemDataRef): void
+  registerItem(id: string, dataRef: ComputedRef<MenuItemData>): void
   unregisterItem(id: string): void
 }
 
@@ -75,6 +88,38 @@ export let Menu = defineComponent({
     let items = ref<StateDefinition['items']['value']>([])
     let searchQuery = ref<StateDefinition['searchQuery']['value']>('')
     let activeItemIndex = ref<StateDefinition['activeItemIndex']['value']>(null)
+    let activationTrigger = ref<StateDefinition['activationTrigger']['value']>(
+      ActivationTrigger.Other
+    )
+
+    function adjustOrderedState(
+      adjustment: (
+        items: UnwrapNestedRefs<StateDefinition['items']['value']>
+      ) => UnwrapNestedRefs<StateDefinition['items']['value']> = (i) => i
+    ) {
+      let currentActiveItem =
+        activeItemIndex.value !== null ? items.value[activeItemIndex.value] : null
+
+      let sortedItems = sortByDomNode(adjustment(items.value.slice()), (item) =>
+        dom(item.dataRef.domRef)
+      )
+
+      // If we inserted an item before the current active item then the active item index
+      // would be wrong. To fix this, we will re-lookup the correct index.
+      let adjustedActiveItemIndex = currentActiveItem
+        ? sortedItems.indexOf(currentActiveItem)
+        : null
+
+      // Reset to `null` in case the currentActiveItem was removed.
+      if (adjustedActiveItemIndex === -1) {
+        adjustedActiveItemIndex = null
+      }
+
+      return {
+        items: sortedItems,
+        activeItemIndex: adjustedActiveItemIndex,
+      }
+    }
 
     let api = {
       menuState,
@@ -83,27 +128,30 @@ export let Menu = defineComponent({
       items,
       searchQuery,
       activeItemIndex,
+      activationTrigger,
       closeMenu: () => {
         menuState.value = MenuStates.Closed
         activeItemIndex.value = null
       },
       openMenu: () => (menuState.value = MenuStates.Open),
-      goToItem(focus: Focus, id?: string) {
+      goToItem(focus: Focus, id?: string, trigger?: ActivationTrigger) {
+        let adjustedState = adjustOrderedState()
         let nextActiveItemIndex = calculateActiveIndex(
           focus === Focus.Specific
             ? { focus: Focus.Specific, id: id! }
             : { focus: focus as Exclude<Focus, Focus.Specific> },
           {
-            resolveItems: () => items.value,
-            resolveActiveIndex: () => activeItemIndex.value,
+            resolveItems: () => adjustedState.items,
+            resolveActiveIndex: () => adjustedState.activeItemIndex,
             resolveId: (item) => item.id,
             resolveDisabled: (item) => item.dataRef.disabled,
           }
         )
 
-        if (searchQuery.value === '' && activeItemIndex.value === nextActiveItemIndex) return
         searchQuery.value = ''
         activeItemIndex.value = nextActiveItemIndex
+        activationTrigger.value = trigger ?? ActivationTrigger.Other
+        items.value = adjustedState.items
       },
       search(value: string) {
         let wasAlreadySearching = searchQuery.value !== ''
@@ -125,51 +173,43 @@ export let Menu = defineComponent({
         if (matchIdx === -1 || matchIdx === activeItemIndex.value) return
 
         activeItemIndex.value = matchIdx
+        activationTrigger.value = ActivationTrigger.Other
       },
       clearSearch() {
         searchQuery.value = ''
       },
-      registerItem(id: string, dataRef: MenuItemDataRef) {
-        let orderMap = Array.from(
-          itemsRef.value?.querySelectorAll('[id^="headlessui-menu-item-"]') ?? []
-        ).reduce(
-          (lookup, element, index) => Object.assign(lookup, { [element.id]: index }),
-          {}
-        ) as Record<string, number>
+      registerItem(id: string, dataRef: MenuItemData) {
+        let adjustedState = adjustOrderedState((items) => {
+          return [...items, { id, dataRef }]
+        })
 
-        // @ts-expect-error The expected type comes from property 'dataRef' which is declared here on type '{ id: string; dataRef: { textValue: string; disabled: boolean; }; }'
-        items.value = [...items.value, { id, dataRef }].sort(
-          (a, z) => orderMap[a.id] - orderMap[z.id]
-        )
+        items.value = adjustedState.items
+        activeItemIndex.value = adjustedState.activeItemIndex
+        activationTrigger.value = ActivationTrigger.Other
       },
       unregisterItem(id: string) {
-        let nextItems = items.value.slice()
-        let currentActiveItem =
-          activeItemIndex.value !== null ? nextItems[activeItemIndex.value] : null
-        let idx = nextItems.findIndex((a) => a.id === id)
-        if (idx !== -1) nextItems.splice(idx, 1)
-        items.value = nextItems
-        activeItemIndex.value = (() => {
-          if (idx === activeItemIndex.value) return null
-          if (currentActiveItem === null) return null
+        let adjustedState = adjustOrderedState((items) => {
+          let idx = items.findIndex((a) => a.id === id)
+          if (idx !== -1) items.splice(idx, 1)
+          return items
+        })
 
-          // If we removed the item before the actual active index, then it would be out of sync. To
-          // fix this, we will find the correct (new) index position.
-          return nextItems.indexOf(currentActiveItem)
-        })()
+        items.value = adjustedState.items
+        activeItemIndex.value = adjustedState.activeItemIndex
+        activationTrigger.value = ActivationTrigger.Other
       },
     }
 
-    useWindowEvent('mousedown', (event) => {
-      let target = event.target as HTMLElement
-      let active = document.activeElement
-
+    // Handle outside click
+    useOutsideClick([buttonRef, itemsRef], (event, target) => {
       if (menuState.value !== MenuStates.Open) return
-      if (dom(buttonRef)?.contains(target)) return
 
-      if (!dom(itemsRef)?.contains(target)) api.closeMenu()
-      if (active !== document.body && active?.contains(target)) return // Keep focus on newly clicked/focused element
-      if (!event.defaultPrevented) dom(buttonRef)?.focus({ preventScroll: true })
+      api.closeMenu()
+
+      if (!isFocusableElement(target, FocusableMode.Loose)) {
+        event.preventDefault()
+        dom(buttonRef)?.focus()
+      }
     })
 
     // @ts-expect-error Types of property 'dataRef' are incompatible.
@@ -197,9 +237,11 @@ export let MenuButton = defineComponent({
     disabled: { type: Boolean, default: false },
     as: { type: [Object, String], default: 'button' },
   },
-  setup(props, { attrs, slots }) {
+  setup(props, { attrs, slots, expose }) {
     let api = useMenuContext('MenuButton')
     let id = `headlessui-menu-button-${useId()}`
+
+    expose({ el: api.buttonRef, $el: api.buttonRef })
 
     function handleKeyDown(event: KeyboardEvent) {
       switch (event.key) {
@@ -260,7 +302,7 @@ export let MenuButton = defineComponent({
 
     return () => {
       let slot = { open: api.menuState.value === MenuStates.Open }
-      let propsWeControl = {
+      let ourProps = {
         ref: api.buttonRef,
         id,
         type: type.value,
@@ -273,7 +315,7 @@ export let MenuButton = defineComponent({
       }
 
       return render({
-        props: { ...props, ...propsWeControl },
+        props: { ...props, ...ourProps },
         slot,
         attrs,
         slots,
@@ -290,10 +332,12 @@ export let MenuItems = defineComponent({
     static: { type: Boolean, default: false },
     unmount: { type: Boolean, default: true },
   },
-  setup(props, { attrs, slots }) {
+  setup(props, { attrs, slots, expose }) {
     let api = useMenuContext('MenuItems')
     let id = `headlessui-menu-items-${useId()}`
     let searchDebounce = ref<ReturnType<typeof setTimeout> | null>(null)
+
+    expose({ el: api.itemsRef, $el: api.itemsRef })
 
     useTreeWalker({
       container: computed(() => dom(api.itemsRef)),
@@ -326,8 +370,9 @@ export let MenuItems = defineComponent({
           event.preventDefault()
           event.stopPropagation()
           if (api.activeItemIndex.value !== null) {
-            let { id } = api.items.value[api.activeItemIndex.value]
-            document.getElementById(id)?.click()
+            let activeItem = api.items.value[api.activeItemIndex.value]
+            let _activeItem = activeItem as unknown as UnwrapNestedRefs<typeof activeItem>
+            dom(_activeItem.dataRef.domRef)?.click()
           }
           api.closeMenu()
           nextTick(() => dom(api.buttonRef)?.focus({ preventScroll: true }))
@@ -398,7 +443,7 @@ export let MenuItems = defineComponent({
 
     return () => {
       let slot = { open: api.menuState.value === MenuStates.Open }
-      let propsWeControl = {
+      let ourProps = {
         'aria-activedescendant':
           api.activeItemIndex.value === null
             ? undefined
@@ -412,10 +457,10 @@ export let MenuItems = defineComponent({
         ref: api.itemsRef,
       }
 
-      let passThroughProps = props
+      let incomingProps = props
 
       return render({
-        props: { ...passThroughProps, ...propsWeControl },
+        props: { ...incomingProps, ...ourProps },
         slot,
         attrs,
         slots,
@@ -433,9 +478,12 @@ export let MenuItem = defineComponent({
     as: { type: [Object, String], default: 'template' },
     disabled: { type: Boolean, default: false },
   },
-  setup(props, { slots, attrs }) {
+  setup(props, { slots, attrs, expose }) {
     let api = useMenuContext('MenuItem')
     let id = `headlessui-menu-item-${useId()}`
+    let internalItemRef = ref<HTMLElement | null>(null)
+
+    expose({ el: internalItemRef, $el: internalItemRef })
 
     let active = computed(() => {
       return api.activeItemIndex.value !== null
@@ -443,9 +491,13 @@ export let MenuItem = defineComponent({
         : false
     })
 
-    let dataRef = ref<MenuItemDataRef['value']>({ disabled: props.disabled, textValue: '' })
+    let dataRef = computed<MenuItemData>(() => ({
+      disabled: props.disabled,
+      textValue: '',
+      domRef: internalItemRef,
+    }))
     onMounted(() => {
-      let textValue = document.getElementById(id)?.textContent?.toLowerCase().trim()
+      let textValue = dom(internalItemRef)?.textContent?.toLowerCase().trim()
       if (textValue !== undefined) dataRef.value.textValue = textValue
     })
 
@@ -455,7 +507,8 @@ export let MenuItem = defineComponent({
     watchEffect(() => {
       if (api.menuState.value !== MenuStates.Open) return
       if (!active.value) return
-      nextTick(() => document.getElementById(id)?.scrollIntoView?.({ block: 'nearest' }))
+      if (api.activationTrigger.value === ActivationTrigger.Pointer) return
+      nextTick(() => dom(internalItemRef)?.scrollIntoView?.({ block: 'nearest' }))
     })
 
     function handleClick(event: MouseEvent) {
@@ -472,7 +525,7 @@ export let MenuItem = defineComponent({
     function handleMove() {
       if (props.disabled) return
       if (active.value) return
-      api.goToItem(Focus.Specific, id)
+      api.goToItem(Focus.Specific, id, ActivationTrigger.Pointer)
     }
 
     function handleLeave() {
@@ -484,8 +537,9 @@ export let MenuItem = defineComponent({
     return () => {
       let { disabled } = props
       let slot = { active: active.value, disabled }
-      let propsWeControl = {
+      let ourProps = {
         id,
+        ref: internalItemRef,
         role: 'menuitem',
         tabIndex: disabled === true ? undefined : -1,
         'aria-disabled': disabled === true ? true : undefined,
@@ -498,7 +552,7 @@ export let MenuItem = defineComponent({
       }
 
       return render({
-        props: { ...props, ...propsWeControl },
+        props: { ...props, ...ourProps },
         slot,
         attrs,
         slots,

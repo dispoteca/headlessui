@@ -35,6 +35,7 @@ import {
   getListboxLabel,
   ListboxState,
   getByText,
+  ListboxMode,
 } from '../../test-utils/accessibility-assertions'
 import { Transition } from '../transitions/transition'
 
@@ -740,7 +741,7 @@ describe('Keyboard interactions', () => {
         assertListbox({ state: ListboxState.InvisibleUnmounted })
 
         // Focus the button
-        getListboxButton()?.focus()
+        await focus(getListboxButton())
 
         // Open listbox
         await press(Keys.Enter)
@@ -786,7 +787,7 @@ describe('Keyboard interactions', () => {
         assertListbox({ state: ListboxState.InvisibleUnmounted })
 
         // Focus the button
-        getListboxButton()?.focus()
+        await focus(getListboxButton())
 
         // Try to open the listbox
         await press(Keys.Enter)
@@ -821,7 +822,7 @@ describe('Keyboard interactions', () => {
         assertListbox({ state: ListboxState.InvisibleUnmounted })
 
         // Focus the button
-        getListboxButton()?.focus()
+        await focus(getListboxButton())
 
         // Open listbox
         await press(Keys.Enter)
@@ -866,7 +867,7 @@ describe('Keyboard interactions', () => {
         assertListbox({ state: ListboxState.InvisibleHidden })
 
         // Focus the button
-        getListboxButton()?.focus()
+        await focus(getListboxButton())
 
         // Open listbox
         await press(Keys.Enter)
@@ -935,7 +936,7 @@ describe('Keyboard interactions', () => {
         assertListbox({ state: ListboxState.InvisibleUnmounted })
 
         // Focus the button
-        getListboxButton()?.focus()
+        await focus(getListboxButton())
 
         // Open listbox
         await press(Keys.Enter)
@@ -972,7 +973,7 @@ describe('Keyboard interactions', () => {
         assertListbox({ state: ListboxState.InvisibleUnmounted })
 
         // Focus the button
-        getListboxButton()?.focus()
+        await focus(getListboxButton())
 
         // Open listbox
         await press(Keys.Enter)
@@ -1006,7 +1007,7 @@ describe('Keyboard interactions', () => {
         assertListbox({ state: ListboxState.InvisibleUnmounted })
 
         // Focus the button
-        getListboxButton()?.focus()
+        await focus(getListboxButton())
 
         // Open listbox
         await press(Keys.Enter)
@@ -1043,7 +1044,7 @@ describe('Keyboard interactions', () => {
         assertListbox({ state: ListboxState.InvisibleUnmounted })
 
         // Focus the button
-        getListboxButton()?.focus()
+        await focus(getListboxButton())
 
         // Open listbox
         await press(Keys.Enter)
@@ -1082,7 +1083,7 @@ describe('Keyboard interactions', () => {
         assertListbox({ state: ListboxState.InvisibleUnmounted })
 
         // Focus the button
-        getListboxButton()?.focus()
+        await focus(getListboxButton())
 
         // Open listbox
         await press(Keys.Enter)
@@ -1218,7 +1219,7 @@ describe('Keyboard interactions', () => {
         assertListbox({ state: ListboxState.InvisibleUnmounted })
 
         // Focus the button
-        getListboxButton()?.focus()
+        await focus(getListboxButton())
 
         // Open listbox
         await press(Keys.Space)
@@ -1261,7 +1262,7 @@ describe('Keyboard interactions', () => {
         assertListbox({ state: ListboxState.InvisibleUnmounted })
 
         // Focus the button
-        getListboxButton()?.focus()
+        await focus(getListboxButton())
 
         // Try to open the listbox
         await press(Keys.Space)
@@ -1296,7 +1297,7 @@ describe('Keyboard interactions', () => {
         assertListbox({ state: ListboxState.InvisibleUnmounted })
 
         // Focus the button
-        getListboxButton()?.focus()
+        await focus(getListboxButton())
 
         // Open listbox
         await press(Keys.Space)
@@ -1333,7 +1334,7 @@ describe('Keyboard interactions', () => {
         assertListbox({ state: ListboxState.InvisibleUnmounted })
 
         // Focus the button
-        getListboxButton()?.focus()
+        await focus(getListboxButton())
 
         // Open listbox
         await press(Keys.Space)
@@ -1367,7 +1368,7 @@ describe('Keyboard interactions', () => {
         assertListbox({ state: ListboxState.InvisibleUnmounted })
 
         // Focus the button
-        getListboxButton()?.focus()
+        await focus(getListboxButton())
 
         // Open listbox
         await press(Keys.Space)
@@ -1404,7 +1405,7 @@ describe('Keyboard interactions', () => {
         assertListbox({ state: ListboxState.InvisibleUnmounted })
 
         // Focus the button
-        getListboxButton()?.focus()
+        await focus(getListboxButton())
 
         // Open listbox
         await press(Keys.Space)
@@ -1443,7 +1444,7 @@ describe('Keyboard interactions', () => {
         assertListbox({ state: ListboxState.InvisibleUnmounted })
 
         // Focus the button
-        getListboxButton()?.focus()
+        await focus(getListboxButton())
 
         // Open listbox
         await press(Keys.Space)
@@ -1535,7 +1536,7 @@ describe('Keyboard interactions', () => {
         )
 
         // Focus the button
-        getListboxButton()?.focus()
+        await focus(getListboxButton())
 
         // Open listbox
         await press(Keys.Space)
@@ -1584,7 +1585,7 @@ describe('Keyboard interactions', () => {
         assertListbox({ state: ListboxState.InvisibleUnmounted })
 
         // Focus the button
-        getListboxButton()?.focus()
+        await focus(getListboxButton())
 
         // Open listbox
         await press(Keys.Enter)
@@ -1635,7 +1636,7 @@ describe('Keyboard interactions', () => {
         assertListbox({ state: ListboxState.InvisibleUnmounted })
 
         // Focus the button
-        getListboxButton()?.focus()
+        await focus(getListboxButton())
 
         // Open listbox
         await press(Keys.Enter)
@@ -1688,7 +1689,7 @@ describe('Keyboard interactions', () => {
         assertListbox({ state: ListboxState.InvisibleUnmounted })
 
         // Focus the button
-        getListboxButton()?.focus()
+        await focus(getListboxButton())
 
         // Open listbox
         await press(Keys.ArrowDown)
@@ -1733,7 +1734,7 @@ describe('Keyboard interactions', () => {
         assertListbox({ state: ListboxState.InvisibleUnmounted })
 
         // Focus the button
-        getListboxButton()?.focus()
+        await focus(getListboxButton())
 
         // Try to open the listbox
         await press(Keys.ArrowDown)
@@ -1768,7 +1769,7 @@ describe('Keyboard interactions', () => {
         assertListbox({ state: ListboxState.InvisibleUnmounted })
 
         // Focus the button
-        getListboxButton()?.focus()
+        await focus(getListboxButton())
 
         // Open listbox
         await press(Keys.ArrowDown)
@@ -1805,7 +1806,7 @@ describe('Keyboard interactions', () => {
         assertListbox({ state: ListboxState.InvisibleUnmounted })
 
         // Focus the button
-        getListboxButton()?.focus()
+        await focus(getListboxButton())
 
         // Open listbox
         await press(Keys.ArrowDown)
@@ -1837,7 +1838,7 @@ describe('Keyboard interactions', () => {
         assertListbox({ state: ListboxState.InvisibleUnmounted })
 
         // Focus the button
-        getListboxButton()?.focus()
+        await focus(getListboxButton())
 
         // Open listbox
         await press(Keys.Enter)
@@ -1885,7 +1886,7 @@ describe('Keyboard interactions', () => {
         assertListbox({ state: ListboxState.InvisibleUnmounted })
 
         // Focus the button
-        getListboxButton()?.focus()
+        await focus(getListboxButton())
 
         // Open listbox
         await press(Keys.Enter)
@@ -1927,7 +1928,7 @@ describe('Keyboard interactions', () => {
         assertListbox({ state: ListboxState.InvisibleUnmounted })
 
         // Focus the button
-        getListboxButton()?.focus()
+        await focus(getListboxButton())
 
         // Open listbox
         await press(Keys.Enter)
@@ -1963,7 +1964,7 @@ describe('Keyboard interactions', () => {
         assertListbox({ state: ListboxState.InvisibleUnmounted })
 
         // Focus the button
-        getListboxButton()?.focus()
+        await focus(getListboxButton())
 
         // Open listbox
         await press(Keys.Enter)
@@ -2011,7 +2012,7 @@ describe('Keyboard interactions', () => {
         assertListbox({ state: ListboxState.InvisibleUnmounted })
 
         // Focus the button
-        getListboxButton()?.focus()
+        await focus(getListboxButton())
 
         // Open listbox
         await press(Keys.ArrowUp)
@@ -2056,7 +2057,7 @@ describe('Keyboard interactions', () => {
         assertListbox({ state: ListboxState.InvisibleUnmounted })
 
         // Focus the button
-        getListboxButton()?.focus()
+        await focus(getListboxButton())
 
         // Try to open the listbox
         await press(Keys.ArrowUp)
@@ -2091,7 +2092,7 @@ describe('Keyboard interactions', () => {
         assertListbox({ state: ListboxState.InvisibleUnmounted })
 
         // Focus the button
-        getListboxButton()?.focus()
+        await focus(getListboxButton())
 
         // Open listbox
         await press(Keys.ArrowUp)
@@ -2128,7 +2129,7 @@ describe('Keyboard interactions', () => {
         assertListbox({ state: ListboxState.InvisibleUnmounted })
 
         // Focus the button
-        getListboxButton()?.focus()
+        await focus(getListboxButton())
 
         // Open listbox
         await press(Keys.ArrowUp)
@@ -2164,7 +2165,7 @@ describe('Keyboard interactions', () => {
         assertListbox({ state: ListboxState.InvisibleUnmounted })
 
         // Focus the button
-        getListboxButton()?.focus()
+        await focus(getListboxButton())
 
         // Open listbox
         await press(Keys.ArrowUp)
@@ -2202,7 +2203,7 @@ describe('Keyboard interactions', () => {
         assertListbox({ state: ListboxState.InvisibleUnmounted })
 
         // Focus the button
-        getListboxButton()?.focus()
+        await focus(getListboxButton())
 
         // Open listbox
         await press(Keys.Enter)
@@ -2244,7 +2245,7 @@ describe('Keyboard interactions', () => {
         assertListbox({ state: ListboxState.InvisibleUnmounted })
 
         // Focus the button
-        getListboxButton()?.focus()
+        await focus(getListboxButton())
 
         // Open listbox
         await press(Keys.ArrowUp)
@@ -2301,7 +2302,7 @@ describe('Keyboard interactions', () => {
         assertListbox({ state: ListboxState.InvisibleUnmounted })
 
         // Focus the button
-        getListboxButton()?.focus()
+        await focus(getListboxButton())
 
         // Open listbox
         await press(Keys.ArrowUp)
@@ -2353,7 +2354,7 @@ describe('Keyboard interactions', () => {
         )
 
         // Focus the button
-        getListboxButton()?.focus()
+        await focus(getListboxButton())
 
         // Open listbox
         await press(Keys.Enter)
@@ -2389,7 +2390,7 @@ describe('Keyboard interactions', () => {
         )
 
         // Focus the button
-        getListboxButton()?.focus()
+        await focus(getListboxButton())
 
         // Open listbox
         await press(Keys.Enter)
@@ -2493,7 +2494,7 @@ describe('Keyboard interactions', () => {
         )
 
         // Focus the button
-        getListboxButton()?.focus()
+        await focus(getListboxButton())
 
         // Open listbox
         await press(Keys.Enter)
@@ -2529,7 +2530,7 @@ describe('Keyboard interactions', () => {
         )
 
         // Focus the button
-        getListboxButton()?.focus()
+        await focus(getListboxButton())
 
         // Open listbox
         await press(Keys.Enter)
@@ -2633,7 +2634,7 @@ describe('Keyboard interactions', () => {
         )
 
         // Focus the button
-        getListboxButton()?.focus()
+        await focus(getListboxButton())
 
         // Open listbox
         await press(Keys.ArrowUp)
@@ -2772,7 +2773,7 @@ describe('Keyboard interactions', () => {
         )
 
         // Focus the button
-        getListboxButton()?.focus()
+        await focus(getListboxButton())
 
         // Open listbox
         await press(Keys.ArrowUp)
@@ -2944,7 +2945,7 @@ describe('Keyboard interactions', () => {
         )
 
         // Focus the button
-        getListboxButton()?.focus()
+        await focus(getListboxButton())
 
         // Open listbox
         await press(Keys.ArrowUp)
@@ -2983,7 +2984,7 @@ describe('Keyboard interactions', () => {
         )
 
         // Focus the button
-        getListboxButton()?.focus()
+        await focus(getListboxButton())
 
         // Open listbox
         await press(Keys.ArrowUp)
@@ -3024,7 +3025,7 @@ describe('Keyboard interactions', () => {
         )
 
         // Focus the button
-        getListboxButton()?.focus()
+        await focus(getListboxButton())
 
         // Open listbox
         await press(Keys.ArrowUp)
@@ -3057,7 +3058,7 @@ describe('Keyboard interactions', () => {
         )
 
         // Focus the button
-        getListboxButton()?.focus()
+        await focus(getListboxButton())
 
         // Open listbox
         await press(Keys.ArrowUp)
@@ -3722,7 +3723,7 @@ describe('Mouse interactions', () => {
     'should be possible to mouse leave an option and make it inactive',
     suppressConsoleLogs(async () => {
       render(
-        <Listbox value={undefined} onChange={console.log}>
+        <Listbox value="bob" onChange={console.log}>
           <Listbox.Button>Trigger</Listbox.Button>
           <Listbox.Options>
             <Listbox.Option value="alice">alice</Listbox.Option>
@@ -3952,4 +3953,311 @@ describe('Mouse interactions', () => {
       assertNoActiveListboxOption()
     })
   )
+})
+
+describe('Multi-select', () => {
+  it(
+    'should be possible to pass multiple values to the Listbox component',
+    suppressConsoleLogs(async () => {
+      function Example() {
+        let [value, setValue] = useState<string[]>(['bob', 'charlie'])
+
+        return (
+          <Listbox value={value} onChange={setValue} multiple>
+            <Listbox.Button>Trigger</Listbox.Button>
+            <Listbox.Options>
+              <Listbox.Option value="alice">alice</Listbox.Option>
+              <Listbox.Option value="bob">bob</Listbox.Option>
+              <Listbox.Option value="charlie">charlie</Listbox.Option>
+            </Listbox.Options>
+          </Listbox>
+        )
+      }
+
+      render(<Example />)
+
+      // Open listbox
+      await click(getListboxButton())
+
+      // Verify that we have an open listbox with multiple mode
+      assertListbox({ state: ListboxState.Visible, mode: ListboxMode.Multiple })
+
+      // Verify that we have multiple selected listbox options
+      let options = getListboxOptions()
+
+      assertListboxOption(options[0], { selected: false })
+      assertListboxOption(options[1], { selected: true })
+      assertListboxOption(options[2], { selected: true })
+    })
+  )
+
+  it(
+    'should make the first selected option the active item',
+    suppressConsoleLogs(async () => {
+      function Example() {
+        let [value, setValue] = useState<string[]>(['bob', 'charlie'])
+
+        return (
+          <Listbox value={value} onChange={setValue} multiple>
+            <Listbox.Button>Trigger</Listbox.Button>
+            <Listbox.Options>
+              <Listbox.Option value="alice">alice</Listbox.Option>
+              <Listbox.Option value="bob">bob</Listbox.Option>
+              <Listbox.Option value="charlie">charlie</Listbox.Option>
+            </Listbox.Options>
+          </Listbox>
+        )
+      }
+
+      render(<Example />)
+
+      // Open listbox
+      await click(getListboxButton())
+
+      // Verify that bob is the active option
+      assertActiveListboxOption(getListboxOptions()[1])
+    })
+  )
+
+  it(
+    'should keep the listbox open when selecting an item via the keyboard',
+    suppressConsoleLogs(async () => {
+      function Example() {
+        let [value, setValue] = useState<string[]>(['bob', 'charlie'])
+
+        return (
+          <Listbox value={value} onChange={setValue} multiple>
+            <Listbox.Button>Trigger</Listbox.Button>
+            <Listbox.Options>
+              <Listbox.Option value="alice">alice</Listbox.Option>
+              <Listbox.Option value="bob">bob</Listbox.Option>
+              <Listbox.Option value="charlie">charlie</Listbox.Option>
+            </Listbox.Options>
+          </Listbox>
+        )
+      }
+
+      render(<Example />)
+
+      // Open listbox
+      await click(getListboxButton())
+      assertListbox({ state: ListboxState.Visible })
+
+      // Verify that bob is the active option
+      await click(getListboxOptions()[0])
+
+      // Verify that the listbox is still open
+      assertListbox({ state: ListboxState.Visible })
+    })
+  )
+
+  it(
+    'should toggle the selected state of an option when clicking on it',
+    suppressConsoleLogs(async () => {
+      function Example() {
+        let [value, setValue] = useState<string[]>(['bob', 'charlie'])
+
+        return (
+          <Listbox value={value} onChange={setValue} multiple>
+            <Listbox.Button>Trigger</Listbox.Button>
+            <Listbox.Options>
+              <Listbox.Option value="alice">alice</Listbox.Option>
+              <Listbox.Option value="bob">bob</Listbox.Option>
+              <Listbox.Option value="charlie">charlie</Listbox.Option>
+            </Listbox.Options>
+          </Listbox>
+        )
+      }
+
+      render(<Example />)
+
+      // Open listbox
+      await click(getListboxButton())
+      assertListbox({ state: ListboxState.Visible })
+
+      let options = getListboxOptions()
+
+      assertListboxOption(options[0], { selected: false })
+      assertListboxOption(options[1], { selected: true })
+      assertListboxOption(options[2], { selected: true })
+
+      // Click on bob
+      await click(getListboxOptions()[1])
+
+      assertListboxOption(options[0], { selected: false })
+      assertListboxOption(options[1], { selected: false })
+      assertListboxOption(options[2], { selected: true })
+
+      // Click on bob again
+      await click(getListboxOptions()[1])
+
+      assertListboxOption(options[0], { selected: false })
+      assertListboxOption(options[1], { selected: true })
+      assertListboxOption(options[2], { selected: true })
+    })
+  )
+})
+
+describe('Form compatibility', () => {
+  it('should be possible to submit a form with a value', async () => {
+    let submits = jest.fn()
+
+    function Example() {
+      let [value, setValue] = useState(null)
+      return (
+        <form
+          onSubmit={(event) => {
+            event.preventDefault()
+            submits([...new FormData(event.currentTarget).entries()])
+          }}
+        >
+          <Listbox value={value} onChange={setValue} name="delivery">
+            <Listbox.Button>Trigger</Listbox.Button>
+            <Listbox.Label>Pizza Delivery</Listbox.Label>
+            <Listbox.Options>
+              <Listbox.Option value="pickup">Pickup</Listbox.Option>
+              <Listbox.Option value="home-delivery">Home delivery</Listbox.Option>
+              <Listbox.Option value="dine-in">Dine in</Listbox.Option>
+            </Listbox.Options>
+          </Listbox>
+          <button>Submit</button>
+        </form>
+      )
+    }
+
+    render(<Example />)
+
+    // Open listbox
+    await click(getListboxButton())
+
+    // Submit the form
+    await click(getByText('Submit'))
+
+    // Verify that the form has been submitted
+    expect(submits).lastCalledWith([]) // no data
+
+    // Open listbox again
+    await click(getListboxButton())
+
+    // Choose home delivery
+    await click(getByText('Home delivery'))
+
+    // Submit the form again
+    await click(getByText('Submit'))
+
+    // Verify that the form has been submitted
+    expect(submits).lastCalledWith([['delivery', 'home-delivery']])
+
+    // Open listbox again
+    await click(getListboxButton())
+
+    // Choose pickup
+    await click(getByText('Pickup'))
+
+    // Submit the form again
+    await click(getByText('Submit'))
+
+    // Verify that the form has been submitted
+    expect(submits).lastCalledWith([['delivery', 'pickup']])
+  })
+
+  it('should be possible to submit a form with a complex value object', async () => {
+    let submits = jest.fn()
+    let options = [
+      {
+        id: 1,
+        value: 'pickup',
+        label: 'Pickup',
+        extra: { info: 'Some extra info' },
+      },
+      {
+        id: 2,
+        value: 'home-delivery',
+        label: 'Home delivery',
+        extra: { info: 'Some extra info' },
+      },
+      {
+        id: 3,
+        value: 'dine-in',
+        label: 'Dine in',
+        extra: { info: 'Some extra info' },
+      },
+    ]
+
+    function Example() {
+      let [value, setValue] = useState(options[0])
+
+      return (
+        <form
+          onSubmit={(event) => {
+            event.preventDefault()
+            submits([...new FormData(event.currentTarget).entries()])
+          }}
+        >
+          <Listbox value={value} onChange={setValue} name="delivery">
+            <Listbox.Button>Trigger</Listbox.Button>
+            <Listbox.Label>Pizza Delivery</Listbox.Label>
+            <Listbox.Options>
+              {options.map((option) => (
+                <Listbox.Option key={option.id} value={option}>
+                  {option.label}
+                </Listbox.Option>
+              ))}
+            </Listbox.Options>
+          </Listbox>
+          <button>Submit</button>
+        </form>
+      )
+    }
+
+    render(<Example />)
+
+    // Open listbox
+    await click(getListboxButton())
+
+    // Submit the form
+    await click(getByText('Submit'))
+
+    // Verify that the form has been submitted
+    expect(submits).lastCalledWith([
+      ['delivery[id]', '1'],
+      ['delivery[value]', 'pickup'],
+      ['delivery[label]', 'Pickup'],
+      ['delivery[extra][info]', 'Some extra info'],
+    ])
+
+    // Open listbox
+    await click(getListboxButton())
+
+    // Choose home delivery
+    await click(getByText('Home delivery'))
+
+    // Submit the form again
+    await click(getByText('Submit'))
+
+    // Verify that the form has been submitted
+    expect(submits).lastCalledWith([
+      ['delivery[id]', '2'],
+      ['delivery[value]', 'home-delivery'],
+      ['delivery[label]', 'Home delivery'],
+      ['delivery[extra][info]', 'Some extra info'],
+    ])
+
+    // Open listbox
+    await click(getListboxButton())
+
+    // Choose pickup
+    await click(getByText('Pickup'))
+
+    // Submit the form again
+    await click(getByText('Submit'))
+
+    // Verify that the form has been submitted
+    expect(submits).lastCalledWith([
+      ['delivery[id]', '1'],
+      ['delivery[value]', 'pickup'],
+      ['delivery[label]', 'Pickup'],
+      ['delivery[extra][info]', 'Some extra info'],
+    ])
+  })
 })

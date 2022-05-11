@@ -266,11 +266,20 @@ export enum ComboboxState {
   InvisibleUnmounted,
 }
 
+export enum ComboboxMode {
+  /** The combobox is in the `single` mode. */
+  Single,
+
+  /** The combobox is in the `multiple` mode. */
+  Multiple,
+}
+
 export function assertCombobox(
   options: {
     attributes?: Record<string, string | null>
     textContent?: string
     state: ComboboxState
+    mode?: ComboboxMode
   },
   combobox = getComboboxInput()
 ) {
@@ -281,7 +290,6 @@ export function assertCombobox(
 
         assertHidden(combobox)
 
-        expect(combobox).toHaveAttribute('aria-labelledby')
         expect(combobox).toHaveAttribute('role', 'combobox')
 
         if (options.textContent) expect(combobox).toHaveTextContent(options.textContent)
@@ -296,8 +304,11 @@ export function assertCombobox(
 
         assertVisible(combobox)
 
-        expect(combobox).toHaveAttribute('aria-labelledby')
         expect(combobox).toHaveAttribute('role', 'combobox')
+
+        if (options.mode && options.mode === ComboboxMode.Multiple) {
+          expect(combobox).toHaveAttribute('aria-multiselectable', 'true')
+        }
 
         if (options.textContent) expect(combobox).toHaveTextContent(options.textContent)
 
@@ -526,6 +537,22 @@ export function assertActiveComboboxOption(
   }
 }
 
+export function assertNotActiveComboboxOption(
+  item: HTMLElement | null,
+  combobox = getComboboxInput()
+) {
+  try {
+    if (combobox === null) return expect(combobox).not.toBe(null)
+    if (item === null) return expect(item).not.toBe(null)
+
+    // Ensure link between combobox & combobox item does not exist
+    expect(combobox).not.toHaveAttribute('aria-activedescendant', item.getAttribute('id'))
+  } catch (err) {
+    if (err instanceof Error) Error.captureStackTrace(err, assertNotActiveComboboxOption)
+    throw err
+  }
+}
+
 export function assertNoActiveComboboxOption(combobox = getComboboxInput()) {
   try {
     if (combobox === null) return expect(combobox).not.toBe(null)
@@ -634,11 +661,20 @@ export enum ListboxState {
   InvisibleUnmounted,
 }
 
+export enum ListboxMode {
+  /** The listbox is in the `single` mode. */
+  Single,
+
+  /** The listbox is in the `multiple` mode. */
+  Multiple,
+}
+
 export function assertListbox(
   options: {
     attributes?: Record<string, string | null>
     textContent?: string
     state: ListboxState
+    mode?: ListboxMode
     orientation?: 'horizontal' | 'vertical'
   },
   listbox = getListbox()
@@ -671,6 +707,10 @@ export function assertListbox(
         expect(listbox).toHaveAttribute('aria-labelledby')
         expect(listbox).toHaveAttribute('aria-orientation', orientation)
         expect(listbox).toHaveAttribute('role', 'listbox')
+
+        if (options.mode && options.mode === ListboxMode.Multiple) {
+          expect(listbox).toHaveAttribute('aria-multiselectable', 'true')
+        }
 
         if (options.textContent) expect(listbox).toHaveTextContent(options.textContent)
 
@@ -1292,6 +1332,10 @@ export function getDialogDescription(): HTMLElement | null {
 
 export function getDialogOverlay(): HTMLElement | null {
   return document.querySelector('[id^="headlessui-dialog-overlay-"]')
+}
+
+export function getDialogBackdrop(): HTMLElement | null {
+  return document.querySelector('[id^="headlessui-dialog-backdrop-"]')
 }
 
 export function getDialogOverlays(): HTMLElement[] {

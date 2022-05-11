@@ -25,9 +25,11 @@ import {
   FocusableMode,
 } from '../../utils/focus-management'
 import { dom } from '../../utils/dom'
-import { useWindowEvent } from '../../hooks/use-window-event'
 import { useOpenClosedProvider, State, useOpenClosed } from '../../internal/open-closed'
 import { useResolveButtonType } from '../../hooks/use-resolve-button-type'
+import { useOutsideClick } from '../../hooks/use-outside-click'
+import { getOwnerDocument } from '../../utils/owner'
+import { useEventListener } from '../../hooks/use-event-listener'
 
 enum PopoverStates {
   Open,
@@ -90,13 +92,18 @@ export let Popover = defineComponent({
   props: {
     as: { type: [Object, String], default: 'div' },
   },
-  setup(props, { slots, attrs }) {
+  setup(props, { slots, attrs, expose }) {
     let buttonId = `headlessui-popover-button-${useId()}`
     let panelId = `headlessui-popover-panel-${useId()}`
+
+    let internalPopoverRef = ref<HTMLElement | null>(null)
+
+    expose({ el: internalPopoverRef, $el: internalPopoverRef })
 
     let popoverState = ref<StateDefinition['popoverState']['value']>(PopoverStates.Closed)
     let button = ref<StateDefinition['button']['value']>(null)
     let panel = ref<StateDefinition['panel']['value']>(null)
+    let ownerDocument = computed(() => getOwnerDocument(internalPopoverRef))
 
     let api = {
       popoverState,
@@ -153,15 +160,17 @@ export let Popover = defineComponent({
     function isFocusWithinPopoverGroup() {
       return (
         groupContext?.isFocusWithinPopoverGroup() ??
-        (dom(button)?.contains(document.activeElement) ||
-          dom(panel)?.contains(document.activeElement))
+        (ownerDocument.value?.activeElement &&
+          (dom(button)?.contains(ownerDocument.value.activeElement) ||
+            dom(panel)?.contains(ownerDocument.value.activeElement)))
       )
     }
 
     watchEffect(() => registerPopover?.(registerBag))
 
     // Handle focus out
-    useWindowEvent(
+    useEventListener(
+      ownerDocument.value?.defaultView,
       'focus',
       () => {
         if (popoverState.value !== PopoverStates.Open) return
@@ -175,13 +184,8 @@ export let Popover = defineComponent({
     )
 
     // Handle outside click
-    useWindowEvent('mousedown', (event: MouseEvent) => {
-      let target = event.target as HTMLElement
-
+    useOutsideClick([button, panel], (event, target) => {
       if (popoverState.value !== PopoverStates.Open) return
-
-      if (dom(button)?.contains(target)) return
-      if (dom(panel)?.contains(target)) return
 
       api.closePopover()
 
@@ -193,7 +197,16 @@ export let Popover = defineComponent({
 
     return () => {
       let slot = { open: popoverState.value === PopoverStates.Open, close: api.close }
-      return render({ props, slot, slots, attrs, name: 'Popover' })
+      return render({
+        props: {
+          ...props,
+          ref: internalPopoverRef,
+        },
+        slot,
+        slots,
+        attrs,
+        name: 'Popover',
+      })
     }
   },
 })
@@ -206,8 +219,11 @@ export let PopoverButton = defineComponent({
     as: { type: [Object, String], default: 'button' },
     disabled: { type: [Boolean], default: false },
   },
-  setup(props, { attrs, slots }) {
+  setup(props, { attrs, slots, expose }) {
     let api = usePopoverContext('PopoverButton')
+    let ownerDocument = computed(() => getOwnerDocument(api.button))
+
+    expose({ el: api.button, $el: api.button })
 
     let groupContext = usePopoverGroupContext()
     let closeOthers = groupContext?.closeOthers
@@ -217,15 +233,14 @@ export let PopoverButton = defineComponent({
 
     // TODO: Revisit when handling Tab/Shift+Tab when using Portal's
     let activeElementRef = ref<Element | null>(null)
-    let previousActiveElementRef = ref<Element | null>(
-      typeof window === 'undefined' ? null : document.activeElement
-    )
+    let previousActiveElementRef = ref<Element | null>()
 
-    useWindowEvent(
+    useEventListener(
+      ownerDocument.value?.defaultView,
       'focus',
       () => {
         previousActiveElementRef.value = activeElementRef.value
-        activeElementRef.value = document.activeElement
+        activeElementRef.value = ownerDocument.value?.activeElement as HTMLElement
       },
       true
     )
@@ -250,7 +265,8 @@ export let PopoverButton = defineComponent({
           case Keys.Space:
           case Keys.Enter:
             event.preventDefault() // Prevent triggering a *click* event
-            event.stopPropagation()
+            // @ts-expect-error
+            event.target.click?.()
             api.closePopover()
             dom(api.button)?.focus() // Re-focus the original opening Button
             break
@@ -268,7 +284,11 @@ export let PopoverButton = defineComponent({
           case Keys.Escape:
             if (api.popoverState.value !== PopoverStates.Open) return closeOthers?.(api.buttonId)
             if (!dom(api.button)) return
-            if (!dom(api.button)?.contains(document.activeElement)) return
+            if (
+              ownerDocument.value?.activeElement &&
+              !dom(api.button)?.contains(ownerDocument.value.activeElement)
+            )
+              return
             event.preventDefault()
             event.stopPropagation()
             api.closePopover()
@@ -287,7 +307,7 @@ export let PopoverButton = defineComponent({
               if (dom(api.panel)?.contains(previousActiveElementRef.value)) return
 
               // Check if the last focused element is *after* the button in the DOM
-              let focusableElements = getFocusableElements()
+              let focusableElements = getFocusableElements(ownerDocument.value?.body)
               let previousIdx = focusableElements.indexOf(
                 previousActiveElementRef.value as HTMLElement
               )
@@ -331,7 +351,7 @@ export let PopoverButton = defineComponent({
           if (dom(api.panel)?.contains(previousActiveElementRef.value)) return
 
           // Check if the last focused element is *after* the button in the DOM
-          let focusableElements = getFocusableElements()
+          let focusableElements = getFocusableElements(ownerDocument.value?.body)
           let previousIdx = focusableElements.indexOf(previousActiveElementRef.value as HTMLElement)
           let buttonIdx = focusableElements.indexOf(dom(api.button)!)
           if (buttonIdx > previousIdx) return
@@ -343,12 +363,14 @@ export let PopoverButton = defineComponent({
       }
     }
 
-    function handleClick() {
+    function handleClick(event: MouseEvent) {
       if (props.disabled) return
       if (isWithinPanel) {
         api.closePopover()
         dom(api.button)?.focus() // Re-focus the original opening Button
       } else {
+        event.preventDefault()
+        event.stopPropagation()
         if (api.popoverState.value === PopoverStates.Closed) closeOthers?.(api.buttonId)
         dom(api.button)?.focus()
         api.togglePopover()
@@ -357,7 +379,7 @@ export let PopoverButton = defineComponent({
 
     return () => {
       let slot = { open: api.popoverState.value === PopoverStates.Open }
-      let propsWeControl = isWithinPanel
+      let ourProps = isWithinPanel
         ? {
             ref: elementRef,
             type: type.value,
@@ -379,7 +401,7 @@ export let PopoverButton = defineComponent({
           }
 
       return render({
-        props: { ...props, ...propsWeControl },
+        props: { ...props, ...ourProps },
         slot,
         attrs: attrs,
         slots: slots,
@@ -417,14 +439,14 @@ export let PopoverOverlay = defineComponent({
 
     return () => {
       let slot = { open: api.popoverState.value === PopoverStates.Open }
-      let propsWeControl = {
+      let ourProps = {
         id,
         'aria-hidden': true,
         onClick: handleClick,
       }
 
       return render({
-        props: { ...props, ...propsWeControl },
+        props: { ...props, ...ourProps },
         slot,
         attrs,
         slots,
@@ -446,9 +468,12 @@ export let PopoverPanel = defineComponent({
     unmount: { type: Boolean, default: true },
     focus: { type: Boolean, default: false },
   },
-  setup(props, { attrs, slots }) {
+  setup(props, { attrs, slots, expose }) {
     let { focus } = props
     let api = usePopoverContext('PopoverPanel')
+    let ownerDocument = computed(() => getOwnerDocument(api.panel))
+
+    expose({ el: api.panel, $el: api.panel })
 
     provide(PopoverPanelContext, api.panelId)
 
@@ -462,20 +487,20 @@ export let PopoverPanel = defineComponent({
       if (api.popoverState.value !== PopoverStates.Open) return
       if (!api.panel) return
 
-      let activeElement = document.activeElement as HTMLElement
+      let activeElement = ownerDocument.value?.activeElement as HTMLElement
       if (dom(api.panel)?.contains(activeElement)) return // Already focused within Dialog
 
       focusIn(dom(api.panel)!, Focus.First)
     })
 
     // Handle Tab / Shift+Tab focus positioning
-    useWindowEvent('keydown', (event: KeyboardEvent) => {
+    useEventListener(ownerDocument.value?.defaultView, 'keydown', (event: KeyboardEvent) => {
       if (api.popoverState.value !== PopoverStates.Open) return
       if (!dom(api.panel)) return
 
       if (event.key !== Keys.Tab) return
-      if (!document.activeElement) return
-      if (!dom(api.panel)?.contains(document.activeElement)) return
+      if (!ownerDocument.value?.activeElement) return
+      if (!dom(api.panel)?.contains(ownerDocument.value.activeElement)) return
 
       // We will take-over the default tab behaviour so that we have a bit
       // control over what is focused next. It will behave exactly the same,
@@ -490,7 +515,7 @@ export let PopoverPanel = defineComponent({
       } else if (result === FocusResult.Overflow) {
         if (!dom(api.button)) return
 
-        let elements = getFocusableElements()
+        let elements = getFocusableElements(ownerDocument.value.body)
         let buttonIdx = elements.indexOf(dom(api.button)!)
 
         let nextElements = elements
@@ -503,19 +528,24 @@ export let PopoverPanel = defineComponent({
         // focusable). Therefore we will try and focus the very first item in
         // the document.body.
         if (focusIn(nextElements, Focus.First) === FocusResult.Error) {
-          focusIn(document.body, Focus.First)
+          focusIn(ownerDocument.value.body, Focus.First)
         }
       }
     })
 
     // Handle focus out when we are in special "focus" mode
-    useWindowEvent(
+    useEventListener(
+      ownerDocument.value?.defaultView,
       'focus',
       () => {
         if (!focus) return
         if (api.popoverState.value !== PopoverStates.Open) return
         if (!dom(api.panel)) return
-        if (dom(api.panel)?.contains(document.activeElement as HTMLElement)) return
+        if (
+          ownerDocument.value?.activeElement &&
+          dom(api.panel)?.contains(ownerDocument.value.activeElement as HTMLElement)
+        )
+          return
         api.closePopover()
       },
       true
@@ -535,7 +565,8 @@ export let PopoverPanel = defineComponent({
         case Keys.Escape:
           if (api.popoverState.value !== PopoverStates.Open) return
           if (!dom(api.panel)) return
-          if (!dom(api.panel)?.contains(document.activeElement)) return
+          if (ownerDocument.value && !dom(api.panel)?.contains(ownerDocument.value.activeElement))
+            return
           event.preventDefault()
           event.stopPropagation()
           api.closePopover()
@@ -550,14 +581,14 @@ export let PopoverPanel = defineComponent({
         close: api.close,
       }
 
-      let propsWeControl = {
+      let ourProps = {
         ref: api.panel,
         id: api.panelId,
         onKeydown: handleKeyDown,
       }
 
       return render({
-        props: { ...props, ...propsWeControl },
+        props: { ...props, ...ourProps },
         slot,
         attrs,
         slots,
@@ -576,9 +607,12 @@ export let PopoverGroup = defineComponent({
   props: {
     as: { type: [Object, String], default: 'div' },
   },
-  setup(props, { attrs, slots }) {
+  setup(props, { attrs, slots, expose }) {
     let groupRef = ref<HTMLElement | null>(null)
     let popovers = ref<PopoverRegisterBag[]>([])
+    let ownerDocument = computed(() => getOwnerDocument(groupRef))
+
+    expose({ el: groupRef, $el: groupRef })
 
     function unregisterPopover(registerBag: PopoverRegisterBag) {
       let idx = popovers.value.indexOf(registerBag)
@@ -593,15 +627,17 @@ export let PopoverGroup = defineComponent({
     }
 
     function isFocusWithinPopoverGroup() {
-      let element = document.activeElement as HTMLElement
+      let owner = ownerDocument.value
+      if (!owner) return false
+      let element = owner.activeElement as HTMLElement
 
       if (dom(groupRef)?.contains(element)) return true
 
       // Check if the focus is in one of the button or panel elements. This is important in case you are rendering inside a Portal.
       return popovers.value.some((bag) => {
         return (
-          document.getElementById(bag.buttonId)?.contains(element) ||
-          document.getElementById(bag.panelId)?.contains(element)
+          owner!.getElementById(bag.buttonId)?.contains(element) ||
+          owner!.getElementById(bag.panelId)?.contains(element)
         )
       })
     }
@@ -620,10 +656,10 @@ export let PopoverGroup = defineComponent({
     })
 
     return () => {
-      let propsWeControl = { ref: groupRef }
+      let ourProps = { ref: groupRef }
 
       return render({
-        props: { ...props, ...propsWeControl },
+        props: { ...props, ...ourProps },
         slot: {},
         attrs,
         slots,

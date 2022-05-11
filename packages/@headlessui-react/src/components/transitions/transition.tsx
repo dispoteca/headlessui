@@ -1,7 +1,6 @@
 import React, {
   Fragment,
   createContext,
-  useCallback,
   useContext,
   useEffect,
   useMemo,
@@ -11,27 +10,31 @@ import React, {
   // Types
   ElementType,
   MutableRefObject,
+  Ref,
 } from 'react'
 import { Props } from '../../types'
-
-import { useId } from '../../hooks/use-id'
-import { useIsInitialRender } from '../../hooks/use-is-initial-render'
+import {
+  Features,
+  forwardRefWithAs,
+  PropsForFeatures,
+  render,
+  RenderStrategy,
+} from '../../utils/render'
+import { OpenClosedProvider, State, useOpenClosed } from '../../internal/open-closed'
 import { match } from '../../utils/match'
+import { microTask } from '../../utils/micro-task'
+import { useId } from '../../hooks/use-id'
 import { useIsMounted } from '../../hooks/use-is-mounted'
 import { useIsoMorphicEffect } from '../../hooks/use-iso-morphic-effect'
-
-import { Features, PropsForFeatures, render, RenderStrategy } from '../../utils/render'
-import { Reason, transition } from './utils/transition'
-import { OpenClosedProvider, State, useOpenClosed } from '../../internal/open-closed'
+import { useLatestValue } from '../../hooks/use-latest-value'
 import { useServerHandoffComplete } from '../../hooks/use-server-handoff-complete'
+import { useSyncRefs } from '../../hooks/use-sync-refs'
+import { useTransition } from '../../hooks/use-transition'
 
 type ID = ReturnType<typeof useId>
 
-function useSplitClasses(classes: string = '') {
-  return useMemo(
-    () => classes.split(' ').filter((className) => className.trim().length > 1),
-    [classes]
-  )
+function splitClasses(classes: string = '') {
+  return classes.split(' ').filter((className) => className.trim().length > 1)
 }
 
 interface TransitionContextValues {
@@ -95,8 +98,8 @@ function useParentNesting() {
 
 interface NestingContextValues {
   children: MutableRefObject<{ id: ID; state: TreeStates }[]>
-  register: (id: ID) => () => void
-  unregister: (id: ID, strategy?: RenderStrategy) => void
+  register: MutableRefObject<(id: ID) => () => void>
+  unregister: MutableRefObject<(id: ID, strategy?: RenderStrategy) => void>
 }
 
 let NestingContext = createContext<NestingContextValues | null>(null)
@@ -110,48 +113,40 @@ function hasChildren(
 }
 
 function useNesting(done?: () => void) {
-  let doneRef = useRef(done)
+  let doneRef = useLatestValue(done)
   let transitionableChildren = useRef<NestingContextValues['children']['current']>([])
   let mounted = useIsMounted()
 
-  useEffect(() => {
-    doneRef.current = done
-  }, [done])
+  let unregister = useLatestValue((childId: ID, strategy = RenderStrategy.Hidden) => {
+    let idx = transitionableChildren.current.findIndex(({ id }) => id === childId)
+    if (idx === -1) return
 
-  let unregister = useCallback(
-    (childId: ID, strategy = RenderStrategy.Hidden) => {
-      let idx = transitionableChildren.current.findIndex(({ id }) => id === childId)
-      if (idx === -1) return
+    match(strategy, {
+      [RenderStrategy.Unmount]() {
+        transitionableChildren.current.splice(idx, 1)
+      },
+      [RenderStrategy.Hidden]() {
+        transitionableChildren.current[idx].state = TreeStates.Hidden
+      },
+    })
 
-      match(strategy, {
-        [RenderStrategy.Unmount]() {
-          transitionableChildren.current.splice(idx, 1)
-        },
-        [RenderStrategy.Hidden]() {
-          transitionableChildren.current[idx].state = TreeStates.Hidden
-        },
-      })
-
+    microTask(() => {
       if (!hasChildren(transitionableChildren) && mounted.current) {
         doneRef.current?.()
       }
-    },
-    [doneRef, mounted, transitionableChildren]
-  )
+    })
+  })
 
-  let register = useCallback(
-    (childId: ID) => {
-      let child = transitionableChildren.current.find(({ id }) => id === childId)
-      if (!child) {
-        transitionableChildren.current.push({ id: childId, state: TreeStates.Visible })
-      } else if (child.state !== TreeStates.Visible) {
-        child.state = TreeStates.Visible
-      }
+  let register = useLatestValue((childId: ID) => {
+    let child = transitionableChildren.current.find(({ id }) => id === childId)
+    if (!child) {
+      transitionableChildren.current.push({ id: childId, state: TreeStates.Visible })
+    } else if (child.state !== TreeStates.Visible) {
+      child.state = TreeStates.Visible
+    }
 
-      return () => unregister(childId, RenderStrategy.Unmount)
-    },
-    [transitionableChildren, unregister]
-  )
+    return () => unregister.current(childId, RenderStrategy.Unmount)
+  })
 
   return useMemo(
     () => ({
@@ -189,9 +184,9 @@ let DEFAULT_TRANSITION_CHILD_TAG = 'div' as const
 type TransitionChildRenderPropArg = MutableRefObject<HTMLDivElement>
 let TransitionChildRenderFeatures = Features.RenderStrategy
 
-function TransitionChild<TTag extends ElementType = typeof DEFAULT_TRANSITION_CHILD_TAG>(
-  props: TransitionChildProps<TTag>
-) {
+let TransitionChild = forwardRefWithAs(function TransitionChild<
+  TTag extends ElementType = typeof DEFAULT_TRANSITION_CHILD_TAG
+>(props: TransitionChildProps<TTag>, ref: Ref<HTMLElement>) {
   let {
     // Event "handlers"
     beforeEnter,
@@ -212,32 +207,33 @@ function TransitionChild<TTag extends ElementType = typeof DEFAULT_TRANSITION_CH
     ...rest
   } = props as typeof props
   let container = useRef<HTMLElement | null>(null)
+  let transitionRef = useSyncRefs(container, ref)
   let [state, setState] = useState(TreeStates.Visible)
   let strategy = rest.unmount ? RenderStrategy.Unmount : RenderStrategy.Hidden
 
   let { show, appear, initial } = useTransitionContext()
   let { register, unregister } = useParentNesting()
+  let prevShow = useRef<boolean | null>(null)
 
   let id = useId()
 
-  let isTransitioning = useRef(false)
+  let transitionInFlight = useRef(false)
 
   let nesting = useNesting(() => {
     // When all children have been unmounted we can only hide ourselves if and only if we are not
     // transitioning ourselves. Otherwise we would unmount before the transitions are finished.
-    if (!isTransitioning.current) {
+    if (!transitionInFlight.current) {
       setState(TreeStates.Hidden)
-      unregister(id)
-      events.current.afterLeave()
+      unregister.current(id)
     }
   })
 
-  useIsoMorphicEffect(() => {
+  useEffect(() => {
     if (!id) return
-    return register(id)
+    return register.current(id)
   }, [register, id])
 
-  useIsoMorphicEffect(() => {
+  useEffect(() => {
     // If we are in another mode than the Hidden mode then ignore
     if (strategy !== RenderStrategy.Hidden) return
     if (!id) return
@@ -249,21 +245,20 @@ function TransitionChild<TTag extends ElementType = typeof DEFAULT_TRANSITION_CH
     }
 
     match(state, {
-      [TreeStates.Hidden]: () => unregister(id),
-      [TreeStates.Visible]: () => register(id),
+      [TreeStates.Hidden]: () => unregister.current(id),
+      [TreeStates.Visible]: () => register.current(id),
     })
   }, [state, id, register, unregister, show, strategy])
 
-  let enterClasses = useSplitClasses(enter)
-  let enterFromClasses = useSplitClasses(enterFrom)
-  let enterToClasses = useSplitClasses(enterTo)
-
-  let enteredClasses = useSplitClasses(entered)
-
-  let leaveClasses = useSplitClasses(leave)
-  let leaveFromClasses = useSplitClasses(leaveFrom)
-  let leaveToClasses = useSplitClasses(leaveTo)
-
+  let classes = useLatestValue({
+    enter: splitClasses(enter),
+    enterFrom: splitClasses(enterFrom),
+    enterTo: splitClasses(enterTo),
+    entered: splitClasses(entered),
+    leave: splitClasses(leave),
+    leaveFrom: splitClasses(leaveFrom),
+    leaveTo: splitClasses(leaveTo),
+  })
   let events = useEvents({ beforeEnter, afterEnter, beforeLeave, afterLeave })
 
   let ready = useServerHandoffComplete()
@@ -277,67 +272,41 @@ function TransitionChild<TTag extends ElementType = typeof DEFAULT_TRANSITION_CH
   // Skipping initial transition
   let skip = initial && !appear
 
-  useIsoMorphicEffect(() => {
-    let node = container.current
-    if (!node) return
-    if (skip) return
+  let transitionDirection = (() => {
+    if (!ready) return 'idle'
+    if (skip) return 'idle'
+    if (prevShow.current === show) return 'idle'
+    return show ? 'enter' : 'leave'
+  })() as 'enter' | 'leave' | 'idle'
 
-    isTransitioning.current = true
-
-    if (show) events.current.beforeEnter()
-    if (!show) events.current.beforeLeave()
-
-    return show
-      ? transition(
-          node,
-          enterClasses,
-          enterFromClasses,
-          enterToClasses,
-          enteredClasses,
-          (reason) => {
-            isTransitioning.current = false
-            if (reason === Reason.Finished) events.current.afterEnter()
-          }
-        )
-      : transition(
-          node,
-          leaveClasses,
-          leaveFromClasses,
-          leaveToClasses,
-          enteredClasses,
-          (reason) => {
-            isTransitioning.current = false
-
-            if (reason !== Reason.Finished) return
-
-            // When we don't have children anymore we can safely unregister from the parent and hide
-            // ourselves.
-            if (!hasChildren(nesting)) {
-              setState(TreeStates.Hidden)
-              unregister(id)
-              events.current.afterLeave()
-            }
-          }
-        )
-  }, [
-    events,
-    id,
-    isTransitioning,
-    unregister,
-    nesting,
+  useTransition({
     container,
-    skip,
-    show,
-    enterClasses,
-    enterFromClasses,
-    enterToClasses,
-    leaveClasses,
-    leaveFromClasses,
-    leaveToClasses,
-  ])
+    classes,
+    events,
+    direction: transitionDirection,
+    onStart: useLatestValue(() => {}),
+    onStop: useLatestValue((direction) => {
+      if (direction === 'leave' && !hasChildren(nesting)) {
+        // When we don't have children anymore we can safely unregister from the parent and hide
+        // ourselves.
+        setState(TreeStates.Hidden)
+        unregister.current(id)
+      }
+    }),
+  })
 
-  let propsWeControl = { ref: container }
-  let passthroughProps = rest
+  useEffect(() => {
+    if (!skip) return
+
+    if (strategy === RenderStrategy.Hidden) {
+      prevShow.current = null
+    } else {
+      prevShow.current = show
+    }
+  }, [show, skip, state])
+
+  let theirProps = rest
+  let ourProps = { ref: transitionRef }
 
   return (
     <NestingContext.Provider value={nesting}>
@@ -348,7 +317,8 @@ function TransitionChild<TTag extends ElementType = typeof DEFAULT_TRANSITION_CH
         })}
       >
         {render({
-          props: { ...passthroughProps, ...propsWeControl },
+          ourProps,
+          theirProps,
           defaultTag: DEFAULT_TRANSITION_CHILD_TAG,
           features: TransitionChildRenderFeatures,
           visible: state === TreeStates.Visible,
@@ -357,13 +327,17 @@ function TransitionChild<TTag extends ElementType = typeof DEFAULT_TRANSITION_CH
       </OpenClosedProvider>
     </NestingContext.Provider>
   )
-}
+})
 
-export function Transition<TTag extends ElementType = typeof DEFAULT_TRANSITION_CHILD_TAG>(
-  props: TransitionChildProps<TTag> & { show?: boolean; appear?: boolean }
-) {
+let TransitionRoot = forwardRefWithAs(function Transition<
+  TTag extends ElementType = typeof DEFAULT_TRANSITION_CHILD_TAG
+>(props: TransitionChildProps<TTag> & { show?: boolean; appear?: boolean }, ref: Ref<HTMLElement>) {
   // @ts-expect-error
-  let { show, appear = false, unmount, ...passthroughProps } = props as typeof props
+  let { show, appear = false, unmount, ...theirProps } = props as typeof props
+  let transitionRef = useSyncRefs(ref)
+
+  // The TransitionChild will also call this hook, and we have to make sure that we are ready.
+  useServerHandoffComplete()
 
   let usesOpenClosedState = useOpenClosed()
 
@@ -384,9 +358,25 @@ export function Transition<TTag extends ElementType = typeof DEFAULT_TRANSITION_
     setState(TreeStates.Hidden)
   })
 
-  let initial = useIsInitialRender()
+  let [initial, setInitial] = useState(true)
+
+  // Change the `initial` value
+  let changes = useRef([show])
+  useIsoMorphicEffect(() => {
+    // We can skip this effect
+    if (initial === false) {
+      return
+    }
+
+    // Track the changes
+    if (changes.current[changes.current.length - 1] !== show) {
+      changes.current.push(show)
+      setInitial(false)
+    }
+  }, [changes, show])
+
   let transitionBag = useMemo<TransitionContextValues>(
-    () => ({ show: show as boolean, appear: appear || !initial, initial }),
+    () => ({ show: show as boolean, appear, initial }),
     [show, appear, initial]
   )
 
@@ -404,11 +394,12 @@ export function Transition<TTag extends ElementType = typeof DEFAULT_TRANSITION_
     <NestingContext.Provider value={nestingBag}>
       <TransitionContext.Provider value={transitionBag}>
         {render({
-          props: {
+          ourProps: {
             ...sharedProps,
             as: Fragment,
-            children: <TransitionChild {...sharedProps} {...passthroughProps} />,
+            children: <TransitionChild ref={transitionRef} {...sharedProps} {...theirProps} />,
           },
+          theirProps: {},
           defaultTag: Fragment,
           features: TransitionChildRenderFeatures,
           visible: state === TreeStates.Visible,
@@ -417,18 +408,23 @@ export function Transition<TTag extends ElementType = typeof DEFAULT_TRANSITION_
       </TransitionContext.Provider>
     </NestingContext.Provider>
   )
-}
+})
 
-Transition.Child = function Child<TTag extends ElementType = typeof DEFAULT_TRANSITION_CHILD_TAG>(
+function Child<TTag extends ElementType = typeof DEFAULT_TRANSITION_CHILD_TAG>(
   props: TransitionChildProps<TTag>
 ) {
   let hasTransitionContext = useContext(TransitionContext) !== null
   let hasOpenClosedContext = useOpenClosed() !== null
 
-  return !hasTransitionContext && hasOpenClosedContext ? (
-    <Transition {...props} />
-  ) : (
-    <TransitionChild {...props} />
+  return (
+    <>
+      {!hasTransitionContext && hasOpenClosedContext ? (
+        <TransitionRoot {...props} />
+      ) : (
+        <TransitionChild {...props} />
+      )}
+    </>
   )
 }
-Transition.Root = Transition
+
+export let Transition = Object.assign(TransitionRoot, { Child, Root: TransitionRoot })

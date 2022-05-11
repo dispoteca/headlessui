@@ -1,62 +1,89 @@
 import {
+  Fragment,
+  computed,
   defineComponent,
-  ref,
-  provide,
+  h,
   inject,
+  nextTick,
   onMounted,
   onUnmounted,
-  computed,
-  nextTick,
-  InjectionKey,
-  Ref,
-  ComputedRef,
-  watchEffect,
+  provide,
+  ref,
   toRaw,
   watch,
+  watchEffect,
+
+  // Types
+  ComputedRef,
+  InjectionKey,
+  Ref,
+  UnwrapNestedRefs,
 } from 'vue'
 
-import { Features, render, omit } from '../../utils/render'
+import { Features, render, omit, compact } from '../../utils/render'
 import { useId } from '../../hooks/use-id'
 import { Keys } from '../../keyboard'
 import { calculateActiveIndex, Focus } from '../../utils/calculate-active-index'
 import { dom } from '../../utils/dom'
-import { useWindowEvent } from '../../hooks/use-window-event'
 import { useOpenClosed, State, useOpenClosedProvider } from '../../internal/open-closed'
 import { match } from '../../utils/match'
 import { useResolveButtonType } from '../../hooks/use-resolve-button-type'
+import { FocusableMode, isFocusableElement, sortByDomNode } from '../../utils/focus-management'
+import { useOutsideClick } from '../../hooks/use-outside-click'
+import { VisuallyHidden } from '../../internal/visually-hidden'
+import { objectToFormEntries } from '../../utils/form'
 
 enum ListboxStates {
   Open,
   Closed,
 }
 
+enum ValueMode {
+  Single,
+  Multi,
+}
+
+enum ActivationTrigger {
+  Pointer,
+  Other,
+}
+
 function nextFrame(cb: () => void) {
   requestAnimationFrame(() => requestAnimationFrame(cb))
 }
 
-type ListboxOptionDataRef = Ref<{ textValue: string; disabled: boolean; value: unknown }>
+type ListboxOptionData = {
+  textValue: string
+  disabled: boolean
+  value: unknown
+  domRef: Ref<HTMLElement | null>
+}
+
 type StateDefinition = {
   // State
   listboxState: Ref<ListboxStates>
   value: ComputedRef<unknown>
   orientation: Ref<'vertical' | 'horizontal'>
 
+  mode: ComputedRef<ValueMode>
+
   labelRef: Ref<HTMLLabelElement | null>
   buttonRef: Ref<HTMLButtonElement | null>
   optionsRef: Ref<HTMLDivElement | null>
 
   disabled: Ref<boolean>
-  options: Ref<{ id: string; dataRef: ListboxOptionDataRef }[]>
+  options: Ref<{ id: string; dataRef: ComputedRef<ListboxOptionData> }[]>
   searchQuery: Ref<string>
   activeOptionIndex: Ref<number | null>
+  activationTrigger: Ref<ActivationTrigger>
 
   // State mutators
   closeListbox(): void
   openListbox(): void
-  goToOption(focus: Focus, id?: string): void
+  goToOption(focus: Focus, id?: string, trigger?: ActivationTrigger): void
   search(value: string): void
   clearSearch(): void
-  registerOption(id: string, dataRef: ListboxOptionDataRef): void
+  registerOption(id: string, dataRef: ComputedRef<ListboxOptionData>): void
   unregisterOption(id: string): void
   select(value: unknown): void
 }
@@ -85,7 +112,10 @@ export let Listbox = defineComponent({
     disabled: { type: [Boolean], default: false },
     horizontal: { type: [Boolean], default: false },
     modelValue: { type: [Object, String, Number, Boolean] },
+    name: { type: String, optional: true },
+    multiple: { type: [Boolean], default: false },
   },
+  inheritAttrs: false,
   setup(props, { slots, attrs, emit }) {
     let listboxState = ref<StateDefinition['listboxState']['value']>(ListboxStates.Closed)
     let labelRef = ref<StateDefinition['labelRef']['value']>(null)
@@ -94,12 +124,46 @@ export let Listbox = defineComponent({
     let options = ref<StateDefinition['options']['value']>([])
     let searchQuery = ref<StateDefinition['searchQuery']['value']>('')
     let activeOptionIndex = ref<StateDefinition['activeOptionIndex']['value']>(null)
+    let activationTrigger = ref<StateDefinition['activationTrigger']['value']>(
+      ActivationTrigger.Other
+    )
+
+    function adjustOrderedState(
+      adjustment: (
+        options: UnwrapNestedRefs<StateDefinition['options']['value']>
+      ) => UnwrapNestedRefs<StateDefinition['options']['value']> = (i) => i
+    ) {
+      let currentActiveOption =
+        activeOptionIndex.value !== null ? options.value[activeOptionIndex.value] : null
+
+      let sortedOptions = sortByDomNode(adjustment(options.value.slice()), (option) =>
+        dom(option.dataRef.domRef)
+      )
+
+      // If we inserted an option before the current active option then the active option index
+      // would be wrong. To fix this, we will re-lookup the correct index.
+      let adjustedActiveOptionIndex = currentActiveOption
+        ? sortedOptions.indexOf(currentActiveOption)
+        : null
+
+      // Reset to `null` in case the currentActiveOption was removed.
+      if (adjustedActiveOptionIndex === -1) {
+        adjustedActiveOptionIndex = null
+      }
+
+      return {
+        options: sortedOptions,
+        activeOptionIndex: adjustedActiveOptionIndex,
+      }
+    }
 
     let value = computed(() => props.modelValue)
+    let mode = computed(() => (props.multiple ? ValueMode.Multi : ValueMode.Single))
 
     let api = {
       listboxState,
       value,
+      mode,
       orientation: computed(() => (props.horizontal ? 'horizontal' : 'vertical')),
       labelRef,
       buttonRef,
@@ -108,6 +172,7 @@ export let Listbox = defineComponent({
       options,
       searchQuery,
       activeOptionIndex,
+      activationTrigger,
       closeListbox() {
         if (props.disabled) return
         if (listboxState.value === ListboxStates.Closed) return
@@ -119,25 +184,27 @@ export let Listbox = defineComponent({
         if (listboxState.value === ListboxStates.Open) return
         listboxState.value = ListboxStates.Open
       },
-      goToOption(focus: Focus, id?: string) {
+      goToOption(focus: Focus, id?: string, trigger?: ActivationTrigger) {
         if (props.disabled) return
         if (listboxState.value === ListboxStates.Closed) return
 
+        let adjustedState = adjustOrderedState()
         let nextActiveOptionIndex = calculateActiveIndex(
           focus === Focus.Specific
             ? { focus: Focus.Specific, id: id! }
             : { focus: focus as Exclude<Focus, Focus.Specific> },
           {
-            resolveItems: () => options.value,
-            resolveActiveIndex: () => activeOptionIndex.value,
+            resolveItems: () => adjustedState.options,
+            resolveActiveIndex: () => adjustedState.activeOptionIndex,
             resolveId: (option) => option.id,
             resolveDisabled: (option) => option.dataRef.disabled,
           }
         )
 
-        if (searchQuery.value === '' && activeOptionIndex.value === nextActiveOptionIndex) return
         searchQuery.value = ''
         activeOptionIndex.value = nextActiveOptionIndex
+        activationTrigger.value = trigger ?? ActivationTrigger.Other
+        options.value = adjustedState.options
       },
       search(value: string) {
         if (props.disabled) return
@@ -164,6 +231,7 @@ export let Listbox = defineComponent({
         if (matchIdx === -1 || matchIdx === activeOptionIndex.value) return
 
         activeOptionIndex.value = matchIdx
+        activationTrigger.value = ActivationTrigger.Other
       },
       clearSearch() {
         if (props.disabled) return
@@ -172,51 +240,59 @@ export let Listbox = defineComponent({
 
         searchQuery.value = ''
       },
-      registerOption(id: string, dataRef: ListboxOptionDataRef) {
-        let orderMap = Array.from(
-          optionsRef.value?.querySelectorAll('[id^="headlessui-listbox-option-"]') ?? []
-        ).reduce(
-          (lookup, element, index) => Object.assign(lookup, { [element.id]: index }),
-          {}
-        ) as Record<string, number>
+      registerOption(id: string, dataRef: ListboxOptionData) {
+        let adjustedState = adjustOrderedState((options) => {
+          return [...options, { id, dataRef }]
+        })
 
-        // @ts-expect-error The expected type comes from property 'dataRef' which is declared here on type '{ id: string; dataRef: { textValue: string; disabled: boolean; }; }'
-        options.value = [...options.value, { id, dataRef }].sort(
-          (a, z) => orderMap[a.id] - orderMap[z.id]
-        )
+        options.value = adjustedState.options
+        activeOptionIndex.value = adjustedState.activeOptionIndex
       },
       unregisterOption(id: string) {
-        let nextOptions = options.value.slice()
-        let currentActiveOption =
-          activeOptionIndex.value !== null ? nextOptions[activeOptionIndex.value] : null
-        let idx = nextOptions.findIndex((a) => a.id === id)
-        if (idx !== -1) nextOptions.splice(idx, 1)
-        options.value = nextOptions
-        activeOptionIndex.value = (() => {
-          if (idx === activeOptionIndex.value) return null
-          if (currentActiveOption === null) return null
+        let adjustedState = adjustOrderedState((options) => {
+          let idx = options.findIndex((a) => a.id === id)
+          if (idx !== -1) options.splice(idx, 1)
+          return options
+        })
 
-          // If we removed the option before the actual active index, then it would be out of sync. To
-          // fix this, we will find the correct (new) index position.
-          return nextOptions.indexOf(currentActiveOption)
-        })()
+        options.value = adjustedState.options
+        activeOptionIndex.value = adjustedState.activeOptionIndex
+        activationTrigger.value = ActivationTrigger.Other
       },
       select(value: unknown) {
         if (props.disabled) return
-        emit('update:modelValue', value)
+        emit(
+          'update:modelValue',
+          match(mode.value, {
+            [ValueMode.Single]: () => value,
+            [ValueMode.Multi]: () => {
+              let copy = toRaw(api.value.value as unknown[]).slice()
+              let raw = toRaw(value)
+
+              let idx = copy.indexOf(raw)
+              if (idx === -1) {
+                copy.push(raw)
+              } else {
+                copy.splice(idx, 1)
+              }
+
+              return copy
+            },
+          })
+        )
       },
     }
 
-    useWindowEvent('mousedown', (event) => {
-      let target = event.target as HTMLElement
-      let active = document.activeElement
-
+    // Handle outside click
+    useOutsideClick([buttonRef, optionsRef], (event, target) => {
       if (listboxState.value !== ListboxStates.Open) return
-      if (dom(buttonRef)?.contains(target)) return
 
-      if (!dom(optionsRef)?.contains(target)) api.closeListbox()
-      if (active !== document.body && active?.contains(target)) return // Keep focus on newly clicked/focused element
-      if (!event.defaultPrevented) dom(buttonRef)?.focus({ preventScroll: true })
+      api.closeListbox()
+
+      if (!isFocusableElement(target, FocusableMode.Loose)) {
+        event.preventDefault()
+        dom(buttonRef)?.focus()
+      }
     })
 
     // @ts-expect-error Types of property 'dataRef' are incompatible.
@@ -231,14 +307,38 @@ export let Listbox = defineComponent({
     )
 
     return () => {
-      let slot = { open: listboxState.value === ListboxStates.Open, disabled: props.disabled }
-      return render({
-        props: omit(props, ['modelValue', 'onUpdate:modelValue', 'disabled', 'horizontal']),
-        slot,
-        slots,
-        attrs,
-        name: 'Listbox',
-      })
+      let { name, modelValue, disabled, ...incomingProps } = props
+
+      let slot = { open: listboxState.value === ListboxStates.Open, disabled }
+
+      return h(Fragment, [
+        ...(name != null && modelValue != null
+          ? objectToFormEntries({ [name]: modelValue }).map(([name, value]) =>
+              h(
+                VisuallyHidden,
+                compact({
+                  key: name,
+                  as: 'input',
+                  type: 'hidden',
+                  hidden: true,
+                  readOnly: true,
+                  name,
+                  value,
+                })
+              )
+            )
+          : []),
+        render({
+          props: {
+            ...attrs,
+            ...omit(incomingProps, ['onUpdate:modelValue', 'horizontal', 'multiple']),
+          },
+          slot,
+          slots,
+          attrs,
+          name: 'Listbox',
+        }),
+      ])
     }
   },
 })
@@ -261,10 +361,10 @@ export let ListboxLabel = defineComponent({
         open: api.listboxState.value === ListboxStates.Open,
         disabled: api.disabled.value,
       }
-      let propsWeControl = { id, ref: api.labelRef, onClick: handleClick }
+      let ourProps = { id, ref: api.labelRef, onClick: handleClick }
 
       return render({
-        props: { ...props, ...propsWeControl },
+        props: { ...props, ...ourProps },
         slot,
         attrs,
         slots,
@@ -281,9 +381,11 @@ export let ListboxButton = defineComponent({
   props: {
     as: { type: [Object, String], default: 'button' },
   },
-  setup(props, { attrs, slots }) {
+  setup(props, { attrs, slots, expose }) {
     let api = useListboxContext('ListboxButton')
     let id = `headlessui-listbox-button-${useId()}`
+
+    expose({ el: api.buttonRef, $el: api.buttonRef })
 
     function handleKeyDown(event: KeyboardEvent) {
       switch (event.key) {
@@ -344,7 +446,7 @@ export let ListboxButton = defineComponent({
         open: api.listboxState.value === ListboxStates.Open,
         disabled: api.disabled.value,
       }
-      let propsWeControl = {
+      let ourProps = {
         ref: api.buttonRef,
         id,
         type: type.value,
@@ -361,7 +463,7 @@ export let ListboxButton = defineComponent({
       }
 
       return render({
-        props: { ...props, ...propsWeControl },
+        props: { ...props, ...ourProps },
         slot,
         attrs,
         slots,
@@ -380,10 +482,12 @@ export let ListboxOptions = defineComponent({
     static: { type: Boolean, default: false },
     unmount: { type: Boolean, default: true },
   },
-  setup(props, { attrs, slots }) {
+  setup(props, { attrs, slots, expose }) {
     let api = useListboxContext('ListboxOptions')
     let id = `headlessui-listbox-options-${useId()}`
     let searchDebounce = ref<ReturnType<typeof setTimeout> | null>(null)
+
+    expose({ el: api.optionsRef, $el: api.optionsRef })
 
     function handleKeyDown(event: KeyboardEvent) {
       if (searchDebounce.value) clearTimeout(searchDebounce.value)
@@ -403,11 +507,13 @@ export let ListboxOptions = defineComponent({
           event.preventDefault()
           event.stopPropagation()
           if (api.activeOptionIndex.value !== null) {
-            let { dataRef } = api.options.value[api.activeOptionIndex.value]
-            api.select(dataRef.value)
+            let activeOption = api.options.value[api.activeOptionIndex.value]
+            api.select(activeOption.dataRef.value)
           }
-          api.closeListbox()
-          nextTick(() => dom(api.buttonRef)?.focus({ preventScroll: true }))
+          if (api.mode.value === ValueMode.Single) {
+            api.closeListbox()
+            nextTick(() => dom(api.buttonRef)?.focus({ preventScroll: true }))
+          }
           break
 
         case match(api.orientation.value, {
@@ -467,11 +573,12 @@ export let ListboxOptions = defineComponent({
 
     return () => {
       let slot = { open: api.listboxState.value === ListboxStates.Open }
-      let propsWeControl = {
+      let ourProps = {
         'aria-activedescendant':
           api.activeOptionIndex.value === null
             ? undefined
             : api.options.value[api.activeOptionIndex.value]?.id,
+        'aria-multiselectable': api.mode.value === ValueMode.Multi ? true : undefined,
         'aria-labelledby': dom(api.labelRef)?.id ?? dom(api.buttonRef)?.id,
         'aria-orientation': api.orientation.value,
         id,
@@ -480,10 +587,10 @@ export let ListboxOptions = defineComponent({
         tabIndex: 0,
         ref: api.optionsRef,
       }
-      let passThroughProps = props
+      let incomingProps = props
 
       return render({
-        props: { ...passThroughProps, ...propsWeControl },
+        props: { ...incomingProps, ...ourProps },
         slot,
         attrs,
         slots,
@@ -502,9 +609,12 @@ export let ListboxOption = defineComponent({
     value: { type: [Object, String, Number, Boolean] },
     disabled: { type: Boolean, default: false },
   },
-  setup(props, { slots, attrs }) {
+  setup(props, { slots, attrs, expose }) {
     let api = useListboxContext('ListboxOption')
     let id = `headlessui-listbox-option-${useId()}`
+    let internalOptionRef = ref<HTMLElement | null>(null)
+
+    expose({ el: internalOptionRef, $el: internalOptionRef })
 
     let active = computed(() => {
       return api.activeOptionIndex.value !== null
@@ -512,15 +622,34 @@ export let ListboxOption = defineComponent({
         : false
     })
 
-    let selected = computed(() => toRaw(api.value.value) === toRaw(props.value))
+    let selected = computed(() =>
+      match(api.mode.value, {
+        [ValueMode.Single]: () => toRaw(api.value.value) === toRaw(props.value),
+        [ValueMode.Multi]: () => (toRaw(api.value.value) as unknown[]).includes(toRaw(props.value)),
+      })
+    )
+    let isFirstSelected = computed(() => {
+      return match(api.mode.value, {
+        [ValueMode.Multi]: () => {
+          let currentValues = toRaw(api.value.value) as unknown[]
 
-    let dataRef = ref<ListboxOptionDataRef['value']>({
+          return (
+            api.options.value.find((option) => currentValues.includes(option.dataRef.value))?.id ===
+            id
+          )
+        },
+        [ValueMode.Single]: () => selected.value,
+      })
+    })
+
+    let dataRef = computed<ListboxOptionData>(() => ({
       disabled: props.disabled,
       value: props.value,
       textValue: '',
-    })
+      domRef: internalOptionRef,
+    }))
     onMounted(() => {
-      let textValue = document.getElementById(id)?.textContent?.toLowerCase().trim()
+      let textValue = dom(internalOptionRef)?.textContent?.toLowerCase().trim()
       if (textValue !== undefined) dataRef.value.textValue = textValue
     })
 
@@ -533,8 +662,15 @@ export let ListboxOption = defineComponent({
         () => {
           if (api.listboxState.value !== ListboxStates.Open) return
           if (!selected.value) return
-          api.goToOption(Focus.Specific, id)
-          document.getElementById(id)?.focus?.()
+
+          match(api.mode.value, {
+            [ValueMode.Multi]: () => {
+              if (isFirstSelected.value) api.goToOption(Focus.Specific, id)
+            },
+            [ValueMode.Single]: () => {
+              api.goToOption(Focus.Specific, id)
+            },
+          })
         },
         { immediate: true }
       )
@@ -543,14 +679,17 @@ export let ListboxOption = defineComponent({
     watchEffect(() => {
       if (api.listboxState.value !== ListboxStates.Open) return
       if (!active.value) return
-      nextTick(() => document.getElementById(id)?.scrollIntoView?.({ block: 'nearest' }))
+      if (api.activationTrigger.value === ActivationTrigger.Pointer) return
+      nextTick(() => dom(internalOptionRef)?.scrollIntoView?.({ block: 'nearest' }))
     })
 
     function handleClick(event: MouseEvent) {
       if (props.disabled) return event.preventDefault()
       api.select(props.value)
-      api.closeListbox()
-      nextTick(() => dom(api.buttonRef)?.focus({ preventScroll: true }))
+      if (api.mode.value === ValueMode.Single) {
+        api.closeListbox()
+        nextTick(() => dom(api.buttonRef)?.focus({ preventScroll: true }))
+      }
     }
 
     function handleFocus() {
@@ -561,7 +700,7 @@ export let ListboxOption = defineComponent({
     function handleMove() {
       if (props.disabled) return
       if (active.value) return
-      api.goToOption(Focus.Specific, id)
+      api.goToOption(Focus.Specific, id, ActivationTrigger.Pointer)
     }
 
     function handleLeave() {
@@ -573,11 +712,15 @@ export let ListboxOption = defineComponent({
     return () => {
       let { disabled } = props
       let slot = { active: active.value, selected: selected.value, disabled }
-      let propsWeControl = {
+      let ourProps = {
         id,
+        ref: internalOptionRef,
         role: 'option',
         tabIndex: disabled === true ? undefined : -1,
         'aria-disabled': disabled === true ? true : undefined,
+        // According to the WAI-ARIA best practices, we should use aria-checked for
+        // multi-select,but Voice-Over disagrees. So we use aria-checked instead for
+        // both single and multi-select.
         'aria-selected': selected.value === true ? selected.value : undefined,
         disabled: undefined, // Never forward the `disabled` prop
         onClick: handleClick,
@@ -589,7 +732,7 @@ export let ListboxOption = defineComponent({
       }
 
       return render({
-        props: { ...props, ...propsWeControl },
+        props: { ...omit(props, ['value', 'disabled']), ...ourProps },
         slot,
         attrs,
         slots,

@@ -16,6 +16,7 @@ import React, {
   MutableRefObject,
   Ref,
   SyntheticEvent,
+  createRef,
 } from 'react'
 
 import { Props } from '../../types'
@@ -30,10 +31,13 @@ import { useInertOthers } from '../../hooks/use-inert-others'
 import { Portal } from '../../components/portal/portal'
 import { ForcePortalRoot } from '../../internal/portal-force-root'
 import { Description, useDescriptions } from '../description/description'
-import { useWindowEvent } from '../../hooks/use-window-event'
 import { useOpenClosed, State } from '../../internal/open-closed'
 import { useServerHandoffComplete } from '../../hooks/use-server-handoff-complete'
 import { StackProvider, StackMessage } from '../../internal/stack-context'
+import { useOutsideClick, Features as OutsideClickFeatures } from '../../hooks/use-outside-click'
+import { getOwnerDocument } from '../../utils/owner'
+import { useOwnerDocument } from '../../hooks/use-owner'
+import { useEventListener } from '../../hooks/use-event-listener'
 
 enum DialogStates {
   Open,
@@ -42,6 +46,7 @@ enum DialogStates {
 
 interface StateDefinition {
   titleId: string | null
+  panelRef: MutableRefObject<HTMLDivElement | null>
 }
 
 enum ActionTypes {
@@ -78,7 +83,7 @@ DialogContext.displayName = 'DialogContext'
 function useDialogContext(component: string) {
   let context = useContext(DialogContext)
   if (context === null) {
-    let err = new Error(`<${component} /> is missing a parent <${Dialog.displayName} /> component.`)
+    let err = new Error(`<${component} /> is missing a parent <Dialog /> component.`)
     if (Error.captureStackTrace) Error.captureStackTrace(err, useDialogContext)
     throw err
   }
@@ -114,10 +119,11 @@ let DialogRoot = forwardRefWithAs(function Dialog<
       initialFocus?: MutableRefObject<HTMLElement | null>
       open?: boolean
       onClose(value: boolean, event?: Event | SyntheticEvent): void
+      __demoMode?: boolean
     },
   ref: Ref<HTMLDivElement>
 ) {
-  let { focusTrapFeatures, initialFocus, open, onClose, ...rest } = props
+  let { focusTrapFeatures, open, onClose, initialFocus, __demoMode = false, ...theirProps } = props
   let [nestedDialogCount, setNestedDialogCount] = useState(0)
 
   let usesOpenClosedState = useOpenClosed()
@@ -132,6 +138,8 @@ let DialogRoot = forwardRefWithAs(function Dialog<
   let containers = useRef<Set<MutableRefObject<HTMLElement | null>>>(new Set())
   let internalDialogRef = useRef<HTMLDivElement | null>(null)
   let dialogRef = useSyncRefs(internalDialogRef, ref)
+
+  let ownerDocument = useOwnerDocument(internalDialogRef)
 
   // Validations
   let hasOpen = props.hasOwnProperty('open') || usesOpenClosedState !== null
@@ -165,18 +173,13 @@ let DialogRoot = forwardRefWithAs(function Dialog<
       `You provided an \`onClose\` prop to the \`Dialog\`, but the value is not a function. Received: ${onClose}`
     )
   }
-  let dialogState = open ? DialogStates.Open : DialogStates.Closed
-  let visible = (() => {
-    if (usesOpenClosedState !== null) {
-      return usesOpenClosedState === State.Open
-    }
 
-    return dialogState === DialogStates.Open
-  })()
+  let dialogState = open ? DialogStates.Open : DialogStates.Closed
 
   let [state, dispatch] = useReducer(stateReducer, {
     titleId: null,
     descriptionId: null,
+    panelRef: createRef(),
   } as StateDefinition)
 
   let close = useCallback((event?: Event | SyntheticEvent) => onClose(false, event), [onClose])
@@ -187,40 +190,56 @@ let DialogRoot = forwardRefWithAs(function Dialog<
   )
 
   let ready = useServerHandoffComplete()
-  let enabled = ready && dialogState === DialogStates.Open
+  let enabled = ready ? (__demoMode ? false : dialogState === DialogStates.Open) : false
   let hasNestedDialogs = nestedDialogCount > 1 // 1 is the current dialog
   let hasParentDialog = useContext(DialogContext) !== null
 
   // If there are multiple dialogs, then you can be the root, the leaf or one
   // in between. We only care abou whether you are the top most one or not.
   let position = !hasNestedDialogs ? 'leaf' : 'parent'
-  focusTrapFeatures = focusTrapFeatures ?? FocusTrapFeatures.All
+  focusTrapFeatures = focusTrapFeatures ?? FocusTrapFeatures.All & ~FocusTrapFeatures.FocusLock
 
-  focusTrapFeatures =
-    focusTrapFeatures &
-    (enabled
+  let previousElement = useFocusTrap(
+    internalDialogRef,
+    enabled
       ? match(position, {
           parent: FocusTrapFeatures.RestoreFocus,
-          leaf: FocusTrapFeatures.All,
+          leaf: focusTrapFeatures,
         })
-      : FocusTrapFeatures.None)
-
-  useFocusTrap(internalDialogRef, focusTrapFeatures, { initialFocus, containers })
+      : FocusTrapFeatures.None,
+    { initialFocus, containers }
+  )
   useInertOthers(internalDialogRef, hasNestedDialogs ? enabled : false)
 
   // Handle outside click
-  useWindowEvent('mousedown', (event) => {
-    let target = event.target as HTMLElement
+  useOutsideClick(
+    () => {
+      // Third party roots
+      let rootContainers = Array.from(ownerDocument?.querySelectorAll('body > *') ?? []).filter(
+        (container) => {
+          if (!(container instanceof HTMLElement)) return false // Skip non-HTMLElements
+          if (container.contains(previousElement.current)) return false // Skip if it is the main app
+          if (state.panelRef.current && container.contains(state.panelRef.current)) return false
+          return true // Keep
+        }
+      )
 
-    if (dialogState !== DialogStates.Open) return
-    if (hasNestedDialogs) return
-    if (internalDialogRef.current?.contains(target)) return
+      return [
+        ...rootContainers,
+        state.panelRef.current ?? internalDialogRef.current,
+      ] as HTMLElement[]
+    },
+    () => {
+      if (dialogState !== DialogStates.Open) return
+      if (hasNestedDialogs) return
 
-    close(event)
-  })
+      close(event)
+    },
+    OutsideClickFeatures.IgnoreScrollbars
+  )
 
   // Handle `Escape` to close
-  useWindowEvent('keydown', (event) => {
+  useEventListener(ownerDocument?.defaultView, 'keydown', (event) => {
     if (event.key !== Keys.Escape) return
     if (dialogState !== DialogStates.Open) return
     if (hasNestedDialogs) return
@@ -234,17 +253,23 @@ let DialogRoot = forwardRefWithAs(function Dialog<
     if (dialogState !== DialogStates.Open) return
     if (hasParentDialog) return
 
-    let overflow = document.documentElement.style.overflow
-    let paddingRight = document.documentElement.style.paddingRight
+    let ownerDocument = getOwnerDocument(internalDialogRef)
+    if (!ownerDocument) return
 
-    let scrollbarWidth = window.innerWidth - document.documentElement.clientWidth
+    let documentElement = ownerDocument.documentElement
+    let ownerWindow = ownerDocument.defaultView ?? window
 
-    document.documentElement.style.overflow = 'hidden'
-    document.documentElement.style.paddingRight = `${scrollbarWidth}px`
+    let overflow = documentElement.style.overflow
+    let paddingRight = documentElement.style.paddingRight
+
+    let scrollbarWidth = ownerWindow.innerWidth - documentElement.clientWidth
+
+    documentElement.style.overflow = 'hidden'
+    documentElement.style.paddingRight = `${scrollbarWidth}px`
 
     return () => {
-      document.documentElement.style.overflow = overflow
-      document.documentElement.style.paddingRight = paddingRight
+      documentElement.style.overflow = overflow
+      documentElement.style.paddingRight = paddingRight
     }
   }, [dialogState, hasParentDialog])
 
@@ -285,7 +310,7 @@ let DialogRoot = forwardRefWithAs(function Dialog<
     [dialogState]
   )
 
-  let propsWeControl = {
+  let ourProps = {
     ref: dialogRef,
     id,
     role: 'dialog',
@@ -296,7 +321,6 @@ let DialogRoot = forwardRefWithAs(function Dialog<
       event.stopPropagation()
     },
   }
-  let passthroughProps = rest
 
   return (
     <StackProvider
@@ -324,11 +348,12 @@ let DialogRoot = forwardRefWithAs(function Dialog<
               <ForcePortalRoot force={false}>
                 <DescriptionProvider slot={slot} name="Dialog.Description">
                   {render({
-                    props: { ...passthroughProps, ...propsWeControl },
+                    ourProps,
+                    theirProps,
                     slot,
                     defaultTag: DEFAULT_DIALOG_TAG,
                     features: DialogRenderFeatures,
-                    visible,
+                    visible: dialogState === DialogStates.Open,
                     name: 'Dialog',
                   })}
                 </DescriptionProvider>
@@ -372,19 +397,108 @@ let Overlay = forwardRefWithAs(function Overlay<
     () => ({ open: dialogState === DialogStates.Open }),
     [dialogState]
   )
-  let propsWeControl = {
+
+  let theirProps = props
+  let ourProps = {
     ref: overlayRef,
     id,
     'aria-hidden': true,
     onClick: handleClick,
   }
-  let passthroughProps = props
 
   return render({
-    props: { ...passthroughProps, ...propsWeControl },
+    ourProps,
+    theirProps,
     slot,
     defaultTag: DEFAULT_OVERLAY_TAG,
     name: 'Dialog.Overlay',
+  })
+})
+
+// ---
+
+let DEFAULT_BACKDROP_TAG = 'div' as const
+interface BackdropRenderPropArg {
+  open: boolean
+}
+type BackdropPropsWeControl = 'id' | 'aria-hidden' | 'onClick'
+
+let Backdrop = forwardRefWithAs(function Backdrop<
+  TTag extends ElementType = typeof DEFAULT_BACKDROP_TAG
+>(props: Props<TTag, BackdropRenderPropArg, BackdropPropsWeControl>, ref: Ref<HTMLDivElement>) {
+  let [{ dialogState }, state] = useDialogContext('Dialog.Backdrop')
+  let backdropRef = useSyncRefs(ref)
+
+  let id = `headlessui-dialog-backdrop-${useId()}`
+
+  useEffect(() => {
+    if (state.panelRef.current === null) {
+      throw new Error(
+        `A <Dialog.Backdrop /> component is being used, but a <Dialog.Panel /> component is missing.`
+      )
+    }
+  }, [state.panelRef])
+
+  let slot = useMemo<BackdropRenderPropArg>(
+    () => ({ open: dialogState === DialogStates.Open }),
+    [dialogState]
+  )
+
+  let theirProps = props
+  let ourProps = {
+    ref: backdropRef,
+    id,
+    'aria-hidden': true,
+  }
+
+  return (
+    <ForcePortalRoot force>
+      <Portal>
+        {render({
+          ourProps,
+          theirProps,
+          slot,
+          defaultTag: DEFAULT_BACKDROP_TAG,
+          name: 'Dialog.Backdrop',
+        })}
+      </Portal>
+    </ForcePortalRoot>
+  )
+})
+
+// ---
+
+let DEFAULT_PANEL_TAG = 'div' as const
+interface PanelRenderPropArg {
+  open: boolean
+}
+
+let Panel = forwardRefWithAs(function Panel<TTag extends ElementType = typeof DEFAULT_PANEL_TAG>(
+  props: Props<TTag, PanelRenderPropArg>,
+  ref: Ref<HTMLDivElement>
+) {
+  let [{ dialogState }, state] = useDialogContext('Dialog.Panel')
+  let panelRef = useSyncRefs(ref, state.panelRef)
+
+  let id = `headlessui-dialog-panel-${useId()}`
+
+  let slot = useMemo<PanelRenderPropArg>(
+    () => ({ open: dialogState === DialogStates.Open }),
+    [dialogState]
+  )
+
+  let theirProps = props
+  let ourProps = {
+    ref: panelRef,
+    id,
+  }
+
+  return render({
+    ourProps,
+    theirProps,
+    slot,
+    defaultTag: DEFAULT_PANEL_TAG,
+    name: 'Dialog.Panel',
   })
 })
 
@@ -396,12 +510,14 @@ interface TitleRenderPropArg {
 }
 type TitlePropsWeControl = 'id'
 
-function Title<TTag extends ElementType = typeof DEFAULT_TITLE_TAG>(
-  props: Props<TTag, TitleRenderPropArg, TitlePropsWeControl>
+let Title = forwardRefWithAs(function Title<TTag extends ElementType = typeof DEFAULT_TITLE_TAG>(
+  props: Props<TTag, TitleRenderPropArg, TitlePropsWeControl>,
+  ref: Ref<HTMLHeadingElement>
 ) {
   let [{ dialogState, setTitleId }] = useDialogContext('Dialog.Title')
 
   let id = `headlessui-dialog-title-${useId()}`
+  let titleRef = useSyncRefs(ref)
 
   useEffect(() => {
     setTitleId(id)
@@ -412,17 +528,19 @@ function Title<TTag extends ElementType = typeof DEFAULT_TITLE_TAG>(
     () => ({ open: dialogState === DialogStates.Open }),
     [dialogState]
   )
-  let propsWeControl = { id }
-  let passthroughProps = props
+
+  let theirProps = props
+  let ourProps = { ref: titleRef, id }
 
   return render({
-    props: { ...passthroughProps, ...propsWeControl },
+    ourProps,
+    theirProps,
     slot,
     defaultTag: DEFAULT_TITLE_TAG,
     name: 'Dialog.Title',
   })
-}
+})
 
 // ---
 
-export let Dialog = Object.assign(DialogRoot, { Overlay, Title, Description })
+export let Dialog = Object.assign(DialogRoot, { Backdrop, Panel, Overlay, Title, Description })

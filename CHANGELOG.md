@@ -9,9 +9,99 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Nothing yet!
 
+## [@headlessui/react@1.6.1] - 2022-05-03
+
+### Fixed
+
+- Fix hydration issue with `Tab` component ([#1393](https://github.com/tailwindlabs/headlessui/pull/1393))
+
 ## [Unreleased - @headlessui/vue]
 
-- Nothing yet!
+### Fixed
+
+- Manually passthrough `attrs` for `Combobox`, `Listbox` and `TabsGroup` component ([#1372](https://github.com/tailwindlabs/headlessui/pull/1372))
+- Fix enter transitions in Vue ([#1395](https://github.com/tailwindlabs/headlessui/pull/1395))
+
+## [@headlessui/react@v1.6.0] - 2022-04-25
+
+### Fixed
+
+- Ensure that you can add the `ref` prop to all components ([#1116](https://github.com/tailwindlabs/headlessui/pull/1116))
+- Ensure links are triggered inside `Popover.Panel` components ([#1153](https://github.com/tailwindlabs/headlessui/pull/1153))
+- Improve SSR for `Tab` component ([#1155](https://github.com/tailwindlabs/headlessui/pull/1155))
+- Fix `hover` scroll issue in `Listbox`, `Combobox` and `Menu` components ([#1161](https://github.com/tailwindlabs/headlessui/pull/1161))
+- Guarantee DOM sort order when performing `Listbox`, `Combobox` and `Menu` actions ([#1168](https://github.com/tailwindlabs/headlessui/pull/1168))
+- Fix `<Transition>` flickering issue ([#1118](https://github.com/tailwindlabs/headlessui/pull/1118))
+- Improve outside click support ([#1175](https://github.com/tailwindlabs/headlessui/pull/1175))
+- Ensure that `appear` prop on the `<Transition>` component works regardless of multiple rerenders ([#1179](https://github.com/tailwindlabs/headlessui/pull/1179))
+- Reset `Combobox.Input` when the value gets reset ([#1181](https://github.com/tailwindlabs/headlessui/pull/1181))
+- Fix double `beforeEnter` callback on the `<Transition>` component caused by SSR ([#1183](https://github.com/tailwindlabs/headlessui/pull/1183))
+- Adjust active `item`/`option` index on `Listbox`, `Combobox` and `Menu` components ([#1184](https://github.com/tailwindlabs/headlessui/pull/1184))
+- Only activate the `Tab` on mouseup ([#1192](https://github.com/tailwindlabs/headlessui/pull/1192))
+- Ignore "outside click" on removed elements ([#1193](https://github.com/tailwindlabs/headlessui/pull/1193))
+- Remove `focus()` from `Listbox.Option` ([#1218](https://github.com/tailwindlabs/headlessui/pull/1218))
+- Improve some internal code ([#1221](https://github.com/tailwindlabs/headlessui/pull/1221))
+- Use `ownerDocument` instead of `document` ([#1158](https://github.com/tailwindlabs/headlessui/pull/1158))
+- Ensure focus trapping plays well with the `Tab` and `Dialog` components ([#1231](https://github.com/tailwindlabs/headlessui/pull/1231))
+- Improve syncing of `Combobox.Input` value ([#1248](https://github.com/tailwindlabs/headlessui/pull/1248))
+- Fix tree-shaking support ([#1247](https://github.com/tailwindlabs/headlessui/pull/1247))
+- Stop propagation on the `Popover.Button` ([#1263](https://github.com/tailwindlabs/headlessui/pull/1263))
+- Fix incorrect `active` option in the `Listbox` and `Combobox` components ([#1264](https://github.com/tailwindlabs/headlessui/pull/1264))
+- Properly merge incoming props ([#1265](https://github.com/tailwindlabs/headlessui/pull/1265))
+- Fix incorrect closing while interacting with third party libraries in `Dialog` component ([#1268](https://github.com/tailwindlabs/headlessui/pull/1268))
+- Mimic browser select on focus when navigating the `Tab` component ([#1272](https://github.com/tailwindlabs/headlessui/pull/1272))
+- Ensure that there is always an active option in the `Combobox` ([#1279](https://github.com/tailwindlabs/headlessui/pull/1279), [#1281](https://github.com/tailwindlabs/headlessui/pull/1281))
+- Support classic form submissions in `RadioGroup`, `Switch` and `Combobox` components ([#1285](https://github.com/tailwindlabs/headlessui/pull/1285))
+- Add React 18 compatibility ([#1326](https://github.com/tailwindlabs/headlessui/pull/1326))
+- Fix open/closed state issue in `Dialog` ([#1360](https://github.com/tailwindlabs/headlessui/pull/1360))
+
+### Added
+
+- Add classic form submission compatibility via new hidden inputs ([#1214](https://github.com/tailwindlabs/headlessui/pull/1214))
+- Add multiple value support to `Listbox` and `Combobox` components ([#1243](https://github.com/tailwindlabs/headlessui/pull/1243), [#1355](https://github.com/tailwindlabs/headlessui/pull/1355))
+- Add support for clearing the value of a `Combobox` ([#1295](https://github.com/tailwindlabs/headlessui/pull/1295))
+- Add `Dialog.Backdrop` and `Dialog.Panel` components ([#1333](https://github.com/tailwindlabs/headlessui/pull/1333))
+
+## [@headlessui/vue@v1.6.0] - 2022-04-25
+
+### Fixed
+
+- Make sure that the input syncs when the combobox closes ([#1137](https://github.com/tailwindlabs/headlessui/pull/1137))
+- Ensure that you can close the `Combobox` initially ([#1148](https://github.com/tailwindlabs/headlessui/pull/1148))
+- Fix `Dialog` usage in `Tab` component ([#1149](https://github.com/tailwindlabs/headlessui/pull/1149))
+- Ensure links are triggered inside `PopoverPanel` components ([#1153](https://github.com/tailwindlabs/headlessui/pull/1153))
+- Fix `hover` scroll issue in `Listbox`, `Combobox` and `Menu` components ([#1161](https://github.com/tailwindlabs/headlessui/pull/1161))
+- Guarantee DOM sort order when performing `Listbox`, `Combobox` and `Menu` actions ([#1168](https://github.com/tailwindlabs/headlessui/pull/1168))
+- Improve outside click support ([#1175](https://github.com/tailwindlabs/headlessui/pull/1175))
+- Reset `ComboboxInput` when the value gets reset ([#1181](https://github.com/tailwindlabs/headlessui/pull/1181))
+- Adjust active `item`/`option` index on `Listbox`, `Combobox` and `Menu` components ([#1184](https://github.com/tailwindlabs/headlessui/pull/1184))
+- Fix re-focusing element after close ([#1186](https://github.com/tailwindlabs/headlessui/pull/1186))
+- Fix `Dialog` cycling ([#553](https://github.com/tailwindlabs/headlessui/pull/553))
+- Only activate the `Tab` on mouseup ([#1192](https://github.com/tailwindlabs/headlessui/pull/1192))
+- Ignore "outside click" on removed elements ([#1193](https://github.com/tailwindlabs/headlessui/pull/1193))
+- Remove `focus()` from `Listbox.Option` ([#1218](https://github.com/tailwindlabs/headlessui/pull/1218))
+- Improve some internal code ([#1221](https://github.com/tailwindlabs/headlessui/pull/1221))
+- Don't drop initial character when searching in Combobox ([#1223](https://github.com/tailwindlabs/headlessui/pull/1223))
+- Use `ownerDocument` instead of `document` ([#1158](https://github.com/tailwindlabs/headlessui/pull/1158))
+- Fix, re-expose `el` from each component ([#1230](https://github.com/tailwindlabs/headlessui/pull/1230))
+- Ensure focus trapping plays well with the `Tab` and `Dialog` components ([#1231](https://github.com/tailwindlabs/headlessui/pull/1231))
+- Improve syncing of `ComboboxInput` value ([#1248](https://github.com/tailwindlabs/headlessui/pull/1248))
+- Fix tree-shaking support ([#1247](https://github.com/tailwindlabs/headlessui/pull/1247))
+- Stop propagation on the `PopoverButton` ([#1263](https://github.com/tailwindlabs/headlessui/pull/1263))
+- Fix incorrect closing while interacting with third party libraries in `Dialog` component ([#1268](https://github.com/tailwindlabs/headlessui/pull/1268))
+- Mimic browser select on focus when navigating via `Tab` ([#1272](https://github.com/tailwindlabs/headlessui/pull/1272))
+- Resolve `initialFocusRef` correctly ([#1276](https://github.com/tailwindlabs/headlessui/pull/1276))
+- Ensure that there is always an active option in the `Combobox` ([#1279](https://github.com/tailwindlabs/headlessui/pull/1279), [#1281](https://github.com/tailwindlabs/headlessui/pull/1281))
+- Support classic form submissions in `RadioGroup`, `Switch` and `Combobox` components ([#1285](https://github.com/tailwindlabs/headlessui/pull/1285))
+- Fix `nullable` prop for Vue ([2b109548b1a94a30858cf58c8f525554a1c12cbb](https://github.com/tailwindlabs/headlessui/commit/2b109548b1a94a30858cf58c8f525554a1c12cbb))
+- Prefer incoming `open` prop over OpenClosed state ([#1360](https://github.com/tailwindlabs/headlessui/pull/1360))
+
+### Added
+
+- Add classic form submission compatibility via new hidden inputs ([#1214](https://github.com/tailwindlabs/headlessui/pull/1214))
+- Add multiple value support to `Listbox` and `Combobox` components ([#1243](https://github.com/tailwindlabs/headlessui/pull/1243), [#1355](https://github.com/tailwindlabs/headlessui/pull/1355))
+- Add support for clearing the value of a `Combobox` ([#1295](https://github.com/tailwindlabs/headlessui/pull/1295))
+- Add `DialogBackdrop` and `DialogPanel` components ([#1333](https://github.com/tailwindlabs/headlessui/pull/1333))
 
 ## [@headlessui/react@v1.5.0] - 2022-02-17
 
@@ -375,8 +465,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Everything!
 
-[unreleased - @headlessui/react]: https://github.com/tailwindlabs/headlessui/compare/@headlessui/react@v1.5.0...HEAD
-[unreleased - @headlessui/vue]: https://github.com/tailwindlabs/headlessui/compare/@headlessui/vue@v1.5.0...HEAD
+[unreleased - @headlessui/react]: https://github.com/tailwindlabs/headlessui/compare/1.6.1...HEAD
+[unreleased - @headlessui/vue]: https://github.com/tailwindlabs/headlessui/compare/@headlessui/vue@v1.6.0...HEAD
+[@headlessui/react@1.6.1]: https://github.com/tailwindlabs/headlessui/compare/@headlessui/react@v1.6.0...v1.6.1
+[@headlessui/react@v1.6.0]: https://github.com/tailwindlabs/headlessui/compare/@headlessui/react@v1.5.0...@headlessui/react@v1.6.0
+[@headlessui/vue@v1.6.0]: https://github.com/tailwindlabs/headlessui/compare/@headlessui/vue@v1.5.0...@headlessui/vue@v1.6.0
 [@headlessui/react@v1.5.0]: https://github.com/tailwindlabs/headlessui/compare/@headlessui/react@v1.4.3...@headlessui/react@v1.5.0
 [@headlessui/vue@v1.5.0]: https://github.com/tailwindlabs/headlessui/compare/@headlessui/vue@v1.4.3...@headlessui/vue@v1.5.0
 [@headlessui/react@v1.4.3]: https://github.com/tailwindlabs/headlessui/compare/@headlessui/react@v1.4.2...@headlessui/react@v1.4.3

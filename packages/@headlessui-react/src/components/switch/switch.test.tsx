@@ -8,8 +8,9 @@ import {
   getSwitch,
   assertActiveElement,
   getSwitchLabel,
+  getByText,
 } from '../../test-utils/accessibility-assertions'
-import { press, click, Keys } from '../../test-utils/interactions'
+import { press, click, focus, Keys } from '../../test-utils/interactions'
 
 jest.mock('../../hooks/use-id')
 
@@ -228,7 +229,7 @@ describe('Keyboard interactions', () => {
       assertSwitch({ state: SwitchState.Off })
 
       // Focus the switch
-      getSwitch()?.focus()
+      await focus(getSwitch())
 
       // Toggle
       await press(Keys.Space)
@@ -253,12 +254,45 @@ describe('Keyboard interactions', () => {
       assertSwitch({ state: SwitchState.Off })
 
       // Focus the switch
-      getSwitch()?.focus()
+      await focus(getSwitch())
 
       // Try to toggle
       await press(Keys.Enter)
 
       expect(handleChange).not.toHaveBeenCalled()
+    })
+
+    it('should submit the form on `Enter`', async () => {
+      let submits = jest.fn()
+
+      function Example() {
+        let [value, setValue] = useState(true)
+
+        return (
+          <form
+            onSubmit={(event) => {
+              event.preventDefault()
+              submits([...new FormData(event.currentTarget).entries()])
+            }}
+          >
+            <Switch checked={value} onChange={setValue} name="option" />
+            <button>Submit</button>
+          </form>
+        )
+      }
+
+      render(<Example />)
+
+      // Focus the input field
+      await focus(getSwitch())
+      assertActiveElement(getSwitch())
+
+      // Press enter (which should submit the form)
+      await press(Keys.Enter)
+
+      // Verify the form was submitted
+      expect(submits).toHaveBeenCalledTimes(1)
+      expect(submits).toHaveBeenCalledWith([['option', 'on']])
     })
   })
 
@@ -275,7 +309,7 @@ describe('Keyboard interactions', () => {
       assertSwitch({ state: SwitchState.Off })
 
       // Focus the switch
-      getSwitch()?.focus()
+      await focus(getSwitch())
 
       // Expect the switch to be active
       assertActiveElement(getSwitch())
@@ -393,5 +427,85 @@ describe('Mouse interactions', () => {
 
     // Ensure state is still off
     assertSwitch({ state: SwitchState.Off })
+  })
+})
+
+describe('Form compatibility', () => {
+  it('should be possible to submit a form with an boolean value', async () => {
+    let submits = jest.fn()
+
+    function Example() {
+      let [state, setState] = useState(false)
+      return (
+        <form
+          onSubmit={(event) => {
+            event.preventDefault()
+            submits([...new FormData(event.currentTarget).entries()])
+          }}
+        >
+          <Switch.Group>
+            <Switch checked={state} onChange={setState} name="notifications" />
+            <Switch.Label>Enable notifications</Switch.Label>
+          </Switch.Group>
+          <button>Submit</button>
+        </form>
+      )
+    }
+
+    render(<Example />)
+
+    // Submit the form
+    await click(getByText('Submit'))
+
+    // Verify that the form has been submitted
+    expect(submits).lastCalledWith([]) // no data
+
+    // Toggle
+    await click(getSwitchLabel())
+
+    // Submit the form again
+    await click(getByText('Submit'))
+
+    // Verify that the form has been submitted
+    expect(submits).lastCalledWith([['notifications', 'on']])
+  })
+
+  it('should be possible to submit a form with a provided string value', async () => {
+    let submits = jest.fn()
+
+    function Example() {
+      let [state, setState] = useState(false)
+      return (
+        <form
+          onSubmit={(event) => {
+            event.preventDefault()
+            submits([...new FormData(event.currentTarget).entries()])
+          }}
+        >
+          <Switch.Group>
+            <Switch checked={state} onChange={setState} name="fruit" value="apple" />
+            <Switch.Label>Apple</Switch.Label>
+          </Switch.Group>
+          <button>Submit</button>
+        </form>
+      )
+    }
+
+    render(<Example />)
+
+    // Submit the form
+    await click(getByText('Submit'))
+
+    // Verify that the form has been submitted
+    expect(submits).lastCalledWith([]) // no data
+
+    // Toggle
+    await click(getSwitchLabel())
+
+    // Submit the form again
+    await click(getByText('Submit'))
+
+    // Verify that the form has been submitted
+    expect(submits).lastCalledWith([['fruit', 'apple']])
   })
 })

@@ -52,6 +52,9 @@ import {
   ComboboxState,
   getByText,
   getComboboxes,
+  assertCombobox,
+  ComboboxMode,
+  assertNotActiveComboboxOption,
 } from '../../test-utils/accessibility-assertions'
 import { html } from '../../test-utils/html'
 import { useOpenClosedProvider, State, useOpenClosed } from '../../internal/open-closed'
@@ -685,7 +688,7 @@ describe('Rendering', () => {
         })
         assertComboboxList({
           state: ComboboxState.Visible,
-          textContent: JSON.stringify({ active: false, selected: false, disabled: false }),
+          textContent: JSON.stringify({ active: true, selected: false, disabled: false }),
         })
       })
     )
@@ -728,9 +731,6 @@ describe('Rendering', () => {
     assertComboboxList({ state: ComboboxState.Visible })
 
     let options = getComboboxOptions()
-
-    // Focus the first item
-    await press(Keys.ArrowDown)
 
     // Verify that the first combobox option is active
     assertActiveComboboxOption(options[0])
@@ -999,7 +999,7 @@ describe('Keyboard interactions', () => {
           expect(options).toHaveLength(3)
           options.forEach((option) => assertComboboxOption(option, { selected: false }))
 
-          assertNoActiveComboboxOption()
+          assertActiveComboboxOption(options[0])
           assertNoSelectedComboboxOption()
         })
       )
@@ -1306,7 +1306,7 @@ describe('Keyboard interactions', () => {
           let options = getComboboxOptions()
           expect(options).toHaveLength(3)
           options.forEach((option) => assertComboboxOption(option))
-          assertNoActiveComboboxOption()
+          assertActiveComboboxOption(options[0])
         })
       )
 
@@ -1561,7 +1561,7 @@ describe('Keyboard interactions', () => {
           options.forEach((option) => assertComboboxOption(option))
 
           // Verify that the first combobox option is active
-          assertNoActiveComboboxOption()
+          assertActiveComboboxOption(options[0])
         })
       )
 
@@ -1950,6 +1950,57 @@ describe('Keyboard interactions', () => {
           assertActiveComboboxOption(getComboboxOptions()[0])
         })
       )
+
+      it(
+        'should submit the form on `Enter`',
+        suppressConsoleLogs(async () => {
+          let submits = jest.fn()
+
+          renderTemplate({
+            template: html`
+              <form @submit="handleSubmit" @keyup="handleKeyUp">
+                <Combobox v-model="value" name="option">
+                  <ComboboxInput />
+                  <ComboboxButton>Trigger</ComboboxButton>
+                  <ComboboxOptions>
+                    <ComboboxOption value="a">Option A</ComboboxOption>
+                    <ComboboxOption value="b">Option B</ComboboxOption>
+                    <ComboboxOption value="c">Option C</ComboboxOption>
+                  </ComboboxOptions>
+                </Combobox>
+
+                <button>Submit</button>
+              </form>
+            `,
+            setup() {
+              let value = ref('b')
+              return {
+                value,
+                handleKeyUp(event: KeyboardEvent) {
+                  // JSDom doesn't automatically submit the form but if we can
+                  // catch an `Enter` event, we can assume it was a submit.
+                  if (event.key === 'Enter') (event.currentTarget as HTMLFormElement).submit()
+                },
+                handleSubmit(event: SubmitEvent) {
+                  event.preventDefault()
+                  submits([...new FormData(event.currentTarget as HTMLFormElement).entries()])
+                },
+              }
+            },
+          })
+
+          // Focus the input field
+          getComboboxInput()?.focus()
+          assertActiveElement(getComboboxInput())
+
+          // Press enter (which should submit the form)
+          await press(Keys.Enter)
+
+          // Verify the form was submitted
+          expect(submits).toHaveBeenCalledTimes(1)
+          expect(submits).toHaveBeenCalledWith([['option', 'b']])
+        })
+      )
     })
 
     describe('`Tab` key', () => {
@@ -1983,7 +2034,6 @@ describe('Keyboard interactions', () => {
           await click(getComboboxButton())
 
           // Select the 2nd option
-          await press(Keys.ArrowDown)
           await press(Keys.ArrowDown)
 
           // Tab to the next DOM node
@@ -2031,7 +2081,6 @@ describe('Keyboard interactions', () => {
           await click(getComboboxButton())
 
           // Select the 2nd option
-          await press(Keys.ArrowDown)
           await press(Keys.ArrowDown)
 
           // Tab to the next DOM node
@@ -2195,6 +2244,42 @@ describe('Keyboard interactions', () => {
           expect(spy).toHaveBeenCalledTimes(2)
         })
       )
+
+      it(
+        'should sync the input field correctly and reset it when pressing Escape',
+        suppressConsoleLogs(async () => {
+          renderTemplate({
+            template: html`
+              <Combobox v-model="value">
+                <ComboboxInput />
+                <ComboboxButton>Trigger</ComboboxButton>
+                <ComboboxOptions>
+                  <ComboboxOption value="option-a">Option A</ComboboxOption>
+                  <ComboboxOption value="option-b">Option B</ComboboxOption>
+                  <ComboboxOption value="option-c">Option C</ComboboxOption>
+                </ComboboxOptions>
+              </Combobox>
+            `,
+            setup: () => ({ value: ref('option-b') }),
+          })
+
+          // Open combobox
+          await click(getComboboxButton())
+
+          // Verify the input has the selected value
+          expect(getComboboxInput()?.value).toBe('option-b')
+
+          // Override the input by typing something
+          await type(word('test'), getComboboxInput())
+          expect(getComboboxInput()?.value).toBe('test')
+
+          // Close combobox
+          await press(Keys.Escape)
+
+          // Verify the input is reset correctly
+          expect(getComboboxInput()?.value).toBe('option-b')
+        })
+      )
     })
 
     describe('`ArrowDown` key', () => {
@@ -2243,7 +2328,7 @@ describe('Keyboard interactions', () => {
           options.forEach((option) => assertComboboxOption(option))
 
           // Verify that the first combobox option is active
-          assertNoActiveComboboxOption()
+          assertActiveComboboxOption(options[0])
         })
       )
 
@@ -2394,13 +2479,9 @@ describe('Keyboard interactions', () => {
           let options = getComboboxOptions()
           expect(options).toHaveLength(3)
           options.forEach((option) => assertComboboxOption(option))
-          assertNoActiveComboboxOption()
-
-          // We should be able to go down once
-          await press(Keys.ArrowDown)
           assertActiveComboboxOption(options[0])
 
-          // We should be able to go down again
+          // We should be able to go down once
           await press(Keys.ArrowDown)
           assertActiveComboboxOption(options[1])
 
@@ -2408,7 +2489,8 @@ describe('Keyboard interactions', () => {
           await press(Keys.ArrowDown)
           assertActiveComboboxOption(options[2])
 
-          // We should NOT be able to go down again (because last option). Current implementation won't go around.
+          // We should NOT be able to go down again (because last option).
+          // Current implementation won't go around.
           await press(Keys.ArrowDown)
           assertActiveComboboxOption(options[2])
         })
@@ -2445,11 +2527,11 @@ describe('Keyboard interactions', () => {
           let options = getComboboxOptions()
           expect(options).toHaveLength(3)
           options.forEach((option) => assertComboboxOption(option))
-          assertNoActiveComboboxOption()
+          assertActiveComboboxOption(options[1])
 
           // We should be able to go down once
           await press(Keys.ArrowDown)
-          assertActiveComboboxOption(options[1])
+          assertActiveComboboxOption(options[2])
         })
       )
 
@@ -2484,11 +2566,51 @@ describe('Keyboard interactions', () => {
           let options = getComboboxOptions()
           expect(options).toHaveLength(3)
           options.forEach((option) => assertComboboxOption(option))
-          assertNoActiveComboboxOption()
+          assertActiveComboboxOption(options[2])
 
           // Open combobox
           await press(Keys.ArrowDown)
           assertActiveComboboxOption(options[2])
+        })
+      )
+
+      it(
+        'should be possible to go to the next item if no value is set',
+        suppressConsoleLogs(async () => {
+          renderTemplate({
+            template: html`
+              <Combobox v-model="value">
+                <ComboboxInput />
+                <ComboboxButton>Trigger</ComboboxButton>
+                <ComboboxOptions>
+                  <ComboboxOption value="a">Option A</ComboboxOption>
+                  <ComboboxOption value="b">Option B</ComboboxOption>
+                  <ComboboxOption value="c">Option C</ComboboxOption>
+                </ComboboxOptions>
+              </Combobox>
+            `,
+            setup: () => ({ value: ref(null) }),
+          })
+
+          assertComboboxButton({
+            state: ComboboxState.InvisibleUnmounted,
+            attributes: { id: 'headlessui-combobox-button-2' },
+          })
+          assertComboboxList({ state: ComboboxState.InvisibleUnmounted })
+
+          // Open combobox
+          await click(getComboboxButton())
+
+          let options = getComboboxOptions()
+
+          // Verify that we are on the first option
+          assertActiveComboboxOption(options[0])
+
+          // Go down once
+          await press(Keys.ArrowDown)
+
+          // We should be on the next item
+          assertActiveComboboxOption(options[1])
         })
       )
     })
@@ -2728,7 +2850,7 @@ describe('Keyboard interactions', () => {
           let options = getComboboxOptions()
           expect(options).toHaveLength(3)
           options.forEach((option) => assertComboboxOption(option))
-          assertNoActiveComboboxOption()
+          assertActiveComboboxOption(options[2])
 
           // Going up or down should select the single available option
           await press(Keys.ArrowUp)
@@ -2827,8 +2949,8 @@ describe('Keyboard interactions', () => {
 
           let options = getComboboxOptions()
 
-          // We should have no option selected
-          assertNoActiveComboboxOption()
+          // We should be on the first non-disabled option
+          assertActiveComboboxOption(options[0])
 
           // We should be able to go to the last option
           await press(Keys.End)
@@ -2860,8 +2982,8 @@ describe('Keyboard interactions', () => {
 
           let options = getComboboxOptions()
 
-          // We should have no option selected
-          assertNoActiveComboboxOption()
+          // We should be on the first non-disabled option
+          assertActiveComboboxOption(options[0])
 
           // We should be able to go to the last non-disabled option
           await press(Keys.End)
@@ -2891,13 +3013,14 @@ describe('Keyboard interactions', () => {
           // Open combobox
           await click(getComboboxButton())
 
-          // We opened via click, we don't have an active option
-          assertNoActiveComboboxOption()
+          let options = getComboboxOptions()
 
-          // We should not be able to go to the end
+          // We should be on the first non-disabled option
+          assertActiveComboboxOption(options[0])
+
+          // We should not be able to go to the end (no-op)
           await press(Keys.End)
 
-          let options = getComboboxOptions()
           assertActiveComboboxOption(options[0])
         })
       )
@@ -2960,7 +3083,7 @@ describe('Keyboard interactions', () => {
           let options = getComboboxOptions()
 
           // We should be on the first option
-          assertNoActiveComboboxOption()
+          assertActiveComboboxOption(options[0])
 
           // We should be able to go to the last option
           await press(Keys.PageDown)
@@ -2995,8 +3118,8 @@ describe('Keyboard interactions', () => {
 
           let options = getComboboxOptions()
 
-          // We should have nothing active
-          assertNoActiveComboboxOption()
+          // We should be on the first non-disabled option
+          assertActiveComboboxOption(options[0])
 
           // We should be able to go to the last non-disabled option
           await press(Keys.PageDown)
@@ -3026,13 +3149,14 @@ describe('Keyboard interactions', () => {
           // Open combobox
           await click(getComboboxButton())
 
-          // We opened via click, we don't have an active option
-          assertNoActiveComboboxOption()
+          let options = getComboboxOptions()
+
+          // We should be on the first non-disabled option
+          assertActiveComboboxOption(options[0])
 
           // We should not be able to go to the end
           await press(Keys.PageDown)
 
-          let options = getComboboxOptions()
           assertActiveComboboxOption(options[0])
         })
       )
@@ -3128,13 +3252,13 @@ describe('Keyboard interactions', () => {
           // Open combobox
           await click(getComboboxButton())
 
-          // We opened via click, we don't have an active option
-          assertNoActiveComboboxOption()
+          let options = getComboboxOptions()
+
+          // We should be on the first non-disabled option
+          assertActiveComboboxOption(options[2])
 
           // We should not be able to go to the end
           await press(Keys.Home)
-
-          let options = getComboboxOptions()
 
           // We should be on the first non-disabled option
           assertActiveComboboxOption(options[2])
@@ -3163,13 +3287,14 @@ describe('Keyboard interactions', () => {
           // Open combobox
           await click(getComboboxButton())
 
-          // We opened via click, we don't have an active option
-          assertNoActiveComboboxOption()
+          let options = getComboboxOptions()
+
+          // We should be on the last option
+          assertActiveComboboxOption(options[3])
 
           // We should not be able to go to the end
           await press(Keys.Home)
 
-          let options = getComboboxOptions()
           assertActiveComboboxOption(options[3])
         })
       )
@@ -3265,15 +3390,14 @@ describe('Keyboard interactions', () => {
           // Open combobox
           await click(getComboboxButton())
 
-          // We opened via click, we don't have an active option
-          assertNoActiveComboboxOption()
-
-          // We should not be able to go to the end
-          await press(Keys.PageUp)
-
           let options = getComboboxOptions()
 
-          // We should be on the first non-disabled option
+          // We opened via click, we default to the first non-disabled option
+          assertActiveComboboxOption(options[2])
+
+          // We should not be able to go to the end (no-op — already there)
+          await press(Keys.PageUp)
+
           assertActiveComboboxOption(options[2])
         })
       )
@@ -3300,13 +3424,14 @@ describe('Keyboard interactions', () => {
           // Open combobox
           await click(getComboboxButton())
 
-          // We opened via click, we don't have an active option
-          assertNoActiveComboboxOption()
+          let options = getComboboxOptions()
 
-          // We should not be able to go to the end
+          // We opened via click, we default to the first non-disabled option
+          assertActiveComboboxOption(options[3])
+
+          // We should not be able to go to the end (no-op — already there)
           await press(Keys.PageUp)
 
-          let options = getComboboxOptions()
           assertActiveComboboxOption(options[3])
         })
       )
@@ -3340,6 +3465,67 @@ describe('Keyboard interactions', () => {
           await press(Keys.PageUp)
 
           assertNoActiveComboboxOption()
+        })
+      )
+    })
+
+    describe('`Backspace` key', () => {
+      it(
+        'should reset the value when the last character is removed, when in `nullable` mode',
+        suppressConsoleLogs(async () => {
+          let handleChange = jest.fn()
+          renderTemplate({
+            template: html`
+              <Combobox v-model="value" nullable>
+                <ComboboxInput />
+                <ComboboxButton>Trigger</ComboboxButton>
+                <ComboboxOptions>
+                  <ComboboxOption value="alice">Alice</ComboboxOption>
+                  <ComboboxOption value="bob">Bob</ComboboxOption>
+                  <ComboboxOption value="charlie">Charlie</ComboboxOption>
+                </ComboboxOptions>
+              </Combobox>
+            `,
+            setup: () => {
+              let value = ref('bob')
+              watch([value], () => handleChange(value.value))
+              return { value }
+            },
+          })
+
+          // Open combobox
+          await click(getComboboxButton())
+
+          let options: ReturnType<typeof getComboboxOptions>
+
+          // Bob should be active
+          options = getComboboxOptions()
+          expect(getComboboxInput()).toHaveValue('bob')
+          assertActiveComboboxOption(options[1])
+
+          assertActiveElement(getComboboxInput())
+
+          // Delete a character
+          await press(Keys.Backspace)
+          expect(getComboboxInput()?.value).toBe('bo')
+          assertActiveComboboxOption(options[1])
+
+          // Delete a character
+          await press(Keys.Backspace)
+          expect(getComboboxInput()?.value).toBe('b')
+          assertActiveComboboxOption(options[1])
+
+          // Delete a character
+          await press(Keys.Backspace)
+          expect(getComboboxInput()?.value).toBe('')
+
+          // Verify that we don't have an active option anymore since we are in `nullable` mode
+          assertNotActiveComboboxOption(options[1])
+          assertNoActiveComboboxOption()
+
+          // Verify that we saw the `null` change coming in
+          expect(handleChange).toHaveBeenCalledTimes(1)
+          expect(handleChange).toHaveBeenCalledWith(null)
         })
       )
     })
@@ -3589,7 +3775,6 @@ describe('Keyboard interactions', () => {
 
           let options: ReturnType<typeof getComboboxOptions>
 
-          await press(Keys.ArrowDown)
           await press(Keys.ArrowDown)
 
           // Person B should be active
@@ -4214,7 +4399,7 @@ describe('Mouse interactions', () => {
       let options = getComboboxOptions()
 
       await mouseMove(options[1])
-      assertNoActiveComboboxOption()
+      assertNotActiveComboboxOption(options[1])
     })
   )
 
@@ -4244,8 +4429,8 @@ describe('Mouse interactions', () => {
       // Try to hover over option 1, which is disabled
       await mouseMove(options[1])
 
-      // We should not have an active option now
-      assertNoActiveComboboxOption()
+      // We should not have option 1 as the active option now
+      assertNotActiveComboboxOption(options[1])
     })
   )
 
@@ -4264,7 +4449,7 @@ describe('Mouse interactions', () => {
             </ComboboxOptions>
           </Combobox>
         `,
-        setup: () => ({ value: ref(null) }),
+        setup: () => ({ value: ref('bob') }),
       })
 
       // Open combobox
@@ -4320,10 +4505,10 @@ describe('Mouse interactions', () => {
 
       // Try to hover over option 1, which is disabled
       await mouseMove(options[1])
-      assertNoActiveComboboxOption()
+      assertNotActiveComboboxOption(options[1])
 
       await mouseLeave(options[1])
-      assertNoActiveComboboxOption()
+      assertNotActiveComboboxOption(options[1])
     })
   )
 
@@ -4404,9 +4589,10 @@ describe('Mouse interactions', () => {
 
       let options = getComboboxOptions()
 
-      // We should be able to click the first option
+      // We should not be able to click the disabled option
       await click(options[1])
       assertComboboxList({ state: ComboboxState.Visible })
+      assertNotActiveComboboxOption(options[1])
       assertActiveElement(getComboboxInput())
       expect(handleChange).toHaveBeenCalledTimes(0)
 
@@ -4416,8 +4602,10 @@ describe('Mouse interactions', () => {
       // Open combobox again
       await click(getComboboxButton())
 
-      // Verify the active option is non existing
-      assertNoActiveComboboxOption()
+      options = getComboboxOptions()
+
+      // Verify the active option is not the disabled one
+      assertNotActiveComboboxOption(options[1])
     })
   )
 
@@ -4446,10 +4634,10 @@ describe('Mouse interactions', () => {
 
       let options = getComboboxOptions()
 
-      // Verify that nothing is active yet
-      assertNoActiveComboboxOption()
+      // Verify that the first item is active
+      assertActiveComboboxOption(options[0])
 
-      // We should be able to focus the first option
+      // We should be able to focus the second option
       await focus(options[1])
       assertActiveComboboxOption(options[1])
     })
@@ -4540,4 +4728,444 @@ describe('Mouse interactions', () => {
       assertActiveComboboxOption(options[1])
     })
   )
+
+  it(
+    'should sync the input field correctly and reset it when resetting the value from outside',
+    suppressConsoleLogs(async () => {
+      renderTemplate({
+        template: html`
+          <Combobox v-model="value">
+            <ComboboxInput />
+            <ComboboxButton>Trigger</ComboboxButton>
+            <ComboboxOptions>
+              <ComboboxOption value="alice">alice</ComboboxOption>
+              <ComboboxOption value="bob">bob</ComboboxOption>
+              <ComboboxOption value="charlie">charlie</ComboboxOption>
+            </ComboboxOptions>
+          </Combobox>
+          <button @click="value = null">reset</button>
+        `,
+        setup: () => ({ value: ref('bob') }),
+      })
+
+      // Open combobox
+      await click(getComboboxButton())
+
+      // Verify the input has the selected value
+      expect(getComboboxInput()?.value).toBe('bob')
+
+      // Override the input by typing something
+      await type(word('test'), getComboboxInput())
+      expect(getComboboxInput()?.value).toBe('test')
+
+      // Reset from outside
+      await click(getByText('reset'))
+
+      // Verify the input is reset correctly
+      expect(getComboboxInput()?.value).toBe('')
+    })
+  )
+
+  it(
+    'should sync the input field correctly and reset it when resetting the value from outside (when using displayValue)',
+    suppressConsoleLogs(async () => {
+      renderTemplate({
+        template: html`
+          <Combobox v-model="value">
+            <ComboboxInput :displayValue="person => person?.name" />
+            <ComboboxButton>Trigger</ComboboxButton>
+            <ComboboxOptions>
+              <ComboboxOption v-for="person in people" :key="person.id" :value="person"
+                >{{ person.name }}</ComboboxOption
+              >
+            </ComboboxOptions>
+          </Combobox>
+          <button @click="value = null">reset</button>
+        `,
+        setup: () => {
+          let people = [
+            { id: 1, name: 'Alice' },
+            { id: 2, name: 'Bob' },
+            { id: 3, name: 'Charlie' },
+          ]
+
+          return {
+            people,
+            value: ref(people[1]),
+          }
+        },
+      })
+
+      // Open combobox
+      await click(getComboboxButton())
+
+      // Verify the input has the selected value
+      expect(getComboboxInput()?.value).toBe('Bob')
+
+      // Override the input by typing something
+      await type(word('test'), getComboboxInput())
+      expect(getComboboxInput()?.value).toBe('test')
+
+      // Reset from outside
+      await click(getByText('reset'))
+
+      // Verify the input is reset correctly
+      expect(getComboboxInput()?.value).toBe('')
+    })
+  )
+})
+
+describe('Multi-select', () => {
+  it(
+    'should be possible to pass multiple values to the Combobox component',
+    suppressConsoleLogs(async () => {
+      renderTemplate({
+        template: html`
+          <Combobox v-model="value" multiple>
+            <ComboboxInput />
+            <ComboboxButton>Trigger</ComboboxButton>
+            <ComboboxOptions>
+              <ComboboxOption value="alice">alice</ComboboxOption>
+              <ComboboxOption value="bob">bob</ComboboxOption>
+              <ComboboxOption value="charlie">charlie</ComboboxOption>
+            </ComboboxOptions>
+          </Combobox>
+        `,
+        setup: () => ({ value: ref(['bob', 'charlie']) }),
+      })
+
+      // Open combobox
+      await click(getComboboxButton())
+
+      // Verify that we have an open combobox with multiple mode
+      assertCombobox({ state: ComboboxState.Visible, mode: ComboboxMode.Multiple })
+
+      // Verify that we have multiple selected combobox options
+      let options = getComboboxOptions()
+
+      assertComboboxOption(options[0], { selected: false })
+      assertComboboxOption(options[1], { selected: true })
+      assertComboboxOption(options[2], { selected: true })
+    })
+  )
+
+  it(
+    'should make the first selected option the active item',
+    suppressConsoleLogs(async () => {
+      renderTemplate({
+        template: html`
+          <Combobox v-model="value" multiple>
+            <ComboboxInput />
+            <ComboboxButton>Trigger</ComboboxButton>
+            <ComboboxOptions>
+              <ComboboxOption value="alice">alice</ComboboxOption>
+              <ComboboxOption value="bob">bob</ComboboxOption>
+              <ComboboxOption value="charlie">charlie</ComboboxOption>
+            </ComboboxOptions>
+          </Combobox>
+        `,
+        setup: () => ({ value: ref(['bob', 'charlie']) }),
+      })
+
+      // Open combobox
+      await click(getComboboxButton())
+
+      // Verify that bob is the active option
+      assertActiveComboboxOption(getComboboxOptions()[1])
+    })
+  )
+
+  it(
+    'should keep the combobox open when selecting an item via the keyboard',
+    suppressConsoleLogs(async () => {
+      renderTemplate({
+        template: html`
+          <Combobox v-model="value" multiple>
+            <ComboboxInput />
+            <ComboboxButton>Trigger</ComboboxButton>
+            <ComboboxOptions>
+              <ComboboxOption value="alice">alice</ComboboxOption>
+              <ComboboxOption value="bob">bob</ComboboxOption>
+              <ComboboxOption value="charlie">charlie</ComboboxOption>
+            </ComboboxOptions>
+          </Combobox>
+        `,
+        setup: () => ({ value: ref(['bob', 'charlie']) }),
+      })
+
+      // Open combobox
+      await click(getComboboxButton())
+      assertCombobox({ state: ComboboxState.Visible })
+
+      // Verify that bob is the active option
+      await click(getComboboxOptions()[0])
+
+      // Verify that the combobox is still open
+      assertCombobox({ state: ComboboxState.Visible })
+    })
+  )
+
+  it(
+    'should toggle the selected state of an option when clicking on it',
+    suppressConsoleLogs(async () => {
+      renderTemplate({
+        template: html`
+          <Combobox v-model="value" multiple>
+            <ComboboxInput />
+            <ComboboxButton>Trigger</ComboboxButton>
+            <ComboboxOptions>
+              <ComboboxOption value="alice">alice</ComboboxOption>
+              <ComboboxOption value="bob">bob</ComboboxOption>
+              <ComboboxOption value="charlie">charlie</ComboboxOption>
+            </ComboboxOptions>
+          </Combobox>
+        `,
+        setup: () => ({ value: ref(['bob', 'charlie']) }),
+      })
+
+      // Open combobox
+      await click(getComboboxButton())
+      assertCombobox({ state: ComboboxState.Visible })
+
+      let options = getComboboxOptions()
+
+      assertComboboxOption(options[0], { selected: false })
+      assertComboboxOption(options[1], { selected: true })
+      assertComboboxOption(options[2], { selected: true })
+
+      // Click on bob
+      await click(getComboboxOptions()[1])
+
+      assertComboboxOption(options[0], { selected: false })
+      assertComboboxOption(options[1], { selected: false })
+      assertComboboxOption(options[2], { selected: true })
+
+      // Click on bob again
+      await click(getComboboxOptions()[1])
+
+      assertComboboxOption(options[0], { selected: false })
+      assertComboboxOption(options[1], { selected: true })
+      assertComboboxOption(options[2], { selected: true })
+    })
+  )
+
+  it(
+    'should toggle the selected state of an option when clicking on it (using objects instead of primitives)',
+    suppressConsoleLogs(async () => {
+      renderTemplate({
+        template: html`
+          <Combobox v-model="value" multiple>
+            <ComboboxInput />
+            <ComboboxButton>Trigger</ComboboxButton>
+            <ComboboxOptions>
+              <ComboboxOption v-for="person in people" :value="person"
+                >{{ person.name }}</ComboboxOption
+              >
+            </ComboboxOptions>
+          </Combobox>
+        `,
+        setup: () => {
+          let people = [
+            { id: 1, name: 'alice' },
+            { id: 2, name: 'bob' },
+            { id: 3, name: 'charlie' },
+          ]
+
+          let value = ref([people[1], people[2]])
+          return { people, value }
+        },
+      })
+
+      // Open combobox
+      await click(getComboboxButton())
+      assertCombobox({ state: ComboboxState.Visible })
+
+      let options = getComboboxOptions()
+
+      assertComboboxOption(options[0], { selected: false })
+      assertComboboxOption(options[1], { selected: true })
+      assertComboboxOption(options[2], { selected: true })
+
+      // Click on bob
+      await click(getComboboxOptions()[1])
+
+      assertComboboxOption(options[0], { selected: false })
+      assertComboboxOption(options[1], { selected: false })
+      assertComboboxOption(options[2], { selected: true })
+
+      // Click on bob again
+      await click(getComboboxOptions()[1])
+
+      assertComboboxOption(options[0], { selected: false })
+      assertComboboxOption(options[1], { selected: true })
+      assertComboboxOption(options[2], { selected: true })
+    })
+  )
+})
+
+describe('Form compatibility', () => {
+  it('should be possible to submit a form with a value', async () => {
+    let submits = jest.fn()
+
+    renderTemplate({
+      template: html`
+        <form @submit="handleSubmit">
+          <Combobox v-model="value" name="delivery">
+            <ComboboxInput />
+            <ComboboxButton>Trigger</ComboboxButton>
+            <ComboboxOptions>
+              <ComboboxOption value="pickup">Pickup</ComboboxOption>
+              <ComboboxOption value="home-delivery">Home delivery</ComboboxOption>
+              <ComboboxOption value="dine-in">Dine in</ComboboxOption>
+            </ComboboxOptions>
+          </Combobox>
+          <button>Submit</button>
+        </form>
+      `,
+      setup: () => {
+        let value = ref(null)
+        return {
+          value,
+          handleSubmit(event: SubmitEvent) {
+            event.preventDefault()
+            submits([...new FormData(event.currentTarget as HTMLFormElement).entries()])
+          },
+        }
+      },
+    })
+
+    // Open combobox
+    await click(getComboboxButton())
+
+    // Submit the form
+    await click(getByText('Submit'))
+
+    // Verify that the form has been submitted
+    expect(submits).lastCalledWith([]) // no data
+
+    // Open combobox again
+    await click(getComboboxButton())
+
+    // Choose home delivery
+    await click(getByText('Home delivery'))
+
+    // Submit the form again
+    await click(getByText('Submit'))
+
+    // Verify that the form has been submitted
+    expect(submits).lastCalledWith([['delivery', 'home-delivery']])
+
+    // Open combobox again
+    await click(getComboboxButton())
+
+    // Choose pickup
+    await click(getByText('Pickup'))
+
+    // Submit the form again
+    await click(getByText('Submit'))
+
+    // Verify that the form has been submitted
+    expect(submits).lastCalledWith([['delivery', 'pickup']])
+  })
+
+  it('should be possible to submit a form with a complex value object', async () => {
+    let submits = jest.fn()
+
+    renderTemplate({
+      template: html`
+        <form @submit="handleSubmit">
+          <Combobox v-model="value" name="delivery">
+            <ComboboxButton>Trigger</ComboboxButton>
+            <ComboboxInput />
+            <ComboboxOptions>
+              <ComboboxOption v-for="option in options" :key="option.id" :value="option"
+                >{{option.label}}</ComboboxOption
+              >
+            </ComboboxOptions>
+          </Combobox>
+          <button>Submit</button>
+        </form>
+      `,
+      setup: () => {
+        let options = ref([
+          {
+            id: 1,
+            value: 'pickup',
+            label: 'Pickup',
+            extra: { info: 'Some extra info' },
+          },
+          {
+            id: 2,
+            value: 'home-delivery',
+            label: 'Home delivery',
+            extra: { info: 'Some extra info' },
+          },
+          {
+            id: 3,
+            value: 'dine-in',
+            label: 'Dine in',
+            extra: { info: 'Some extra info' },
+          },
+        ])
+        let value = ref(options.value[0])
+
+        return {
+          value,
+          options,
+          handleSubmit(event: SubmitEvent) {
+            event.preventDefault()
+            submits([...new FormData(event.currentTarget as HTMLFormElement).entries()])
+          },
+        }
+      },
+    })
+
+    // Open combobox
+    await click(getComboboxButton())
+
+    // Submit the form
+    await click(getByText('Submit'))
+
+    // Verify that the form has been submitted
+    expect(submits).lastCalledWith([
+      ['delivery[id]', '1'],
+      ['delivery[value]', 'pickup'],
+      ['delivery[label]', 'Pickup'],
+      ['delivery[extra][info]', 'Some extra info'],
+    ])
+
+    // Open combobox
+    await click(getComboboxButton())
+
+    // Choose home delivery
+    await click(getByText('Home delivery'))
+
+    // Submit the form again
+    await click(getByText('Submit'))
+
+    // Verify that the form has been submitted
+    expect(submits).lastCalledWith([
+      ['delivery[id]', '2'],
+      ['delivery[value]', 'home-delivery'],
+      ['delivery[label]', 'Home delivery'],
+      ['delivery[extra][info]', 'Some extra info'],
+    ])
+
+    // Open combobox
+    await click(getComboboxButton())
+
+    // Choose pickup
+    await click(getByText('Pickup'))
+
+    // Submit the form again
+    await click(getByText('Submit'))
+
+    // Verify that the form has been submitted
+    expect(submits).lastCalledWith([
+      ['delivery[id]', '1'],
+      ['delivery[value]', 'pickup'],
+      ['delivery[label]', 'Pickup'],
+      ['delivery[extra][info]', 'Some extra info'],
+    ])
+  })
 })

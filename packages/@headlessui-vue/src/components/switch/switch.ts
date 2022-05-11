@@ -1,5 +1,8 @@
 import {
+  Fragment,
+  computed,
   defineComponent,
+  h,
   inject,
   provide,
   ref,
@@ -7,15 +10,16 @@ import {
   // Types
   InjectionKey,
   Ref,
-  computed,
 } from 'vue'
 
-import { render } from '../../utils/render'
+import { render, compact } from '../../utils/render'
 import { useId } from '../../hooks/use-id'
 import { Keys } from '../../keyboard'
 import { Label, useLabels } from '../label/label'
 import { Description, useDescriptions } from '../description/description'
 import { useResolveButtonType } from '../../hooks/use-resolve-button-type'
+import { VisuallyHidden } from '../../internal/visually-hidden'
+import { attemptSubmit } from '../../utils/form'
 
 type StateDefinition = {
   // State
@@ -63,9 +67,11 @@ export let Switch = defineComponent({
   props: {
     as: { type: [Object, String], default: 'button' },
     modelValue: { type: Boolean, default: false },
+    name: { type: String, optional: true },
+    value: { type: String, optional: true },
   },
-
-  setup(props, { emit, attrs, slots }) {
+  inheritAttrs: false,
+  setup(props, { emit, attrs, slots, expose }) {
     let api = inject(GroupContext, null)
     let id = `headlessui-switch-${useId()}`
 
@@ -80,14 +86,20 @@ export let Switch = defineComponent({
       switchRef
     )
 
+    expose({ el: switchRef, $el: switchRef })
+
     function handleClick(event: MouseEvent) {
       event.preventDefault()
       toggle()
     }
 
     function handleKeyUp(event: KeyboardEvent) {
-      if (event.key !== Keys.Tab) event.preventDefault()
-      if (event.key === Keys.Space) toggle()
+      if (event.key === Keys.Space) {
+        event.preventDefault()
+        toggle()
+      } else if (event.key === Keys.Enter) {
+        attemptSubmit(event.currentTarget as HTMLElement)
+      }
     }
 
     // This is needed so that we can "cancel" the click event when we use the `Enter` key on a button.
@@ -96,14 +108,15 @@ export let Switch = defineComponent({
     }
 
     return () => {
-      let slot = { checked: props.modelValue }
-      let propsWeControl = {
+      let { name, value, modelValue, ...incomingProps } = props
+      let slot = { checked: modelValue }
+      let ourProps = {
         id,
         ref: switchRef,
         role: 'switch',
         type: type.value,
         tabIndex: 0,
-        'aria-checked': props.modelValue,
+        'aria-checked': modelValue,
         'aria-labelledby': api?.labelledby.value,
         'aria-describedby': api?.describedby.value,
         onClick: handleClick,
@@ -111,13 +124,29 @@ export let Switch = defineComponent({
         onKeypress: handleKeyPress,
       }
 
-      return render({
-        props: { ...props, ...propsWeControl },
-        slot,
-        attrs,
-        slots,
-        name: 'Switch',
-      })
+      return h(Fragment, [
+        name != null && modelValue != null
+          ? h(
+              VisuallyHidden,
+              compact({
+                as: 'input',
+                type: 'checkbox',
+                hidden: true,
+                readOnly: true,
+                checked: modelValue,
+                name,
+                value,
+              })
+            )
+          : null,
+        render({
+          props: { ...attrs, ...incomingProps, ...ourProps },
+          slot,
+          attrs,
+          slots,
+          name: 'Switch',
+        }),
+      ])
     }
   },
 })

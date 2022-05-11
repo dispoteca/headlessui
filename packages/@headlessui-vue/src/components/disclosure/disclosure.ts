@@ -118,9 +118,9 @@ export let Disclosure = defineComponent({
     )
 
     return () => {
-      let { defaultOpen: _, ...passThroughProps } = props
+      let { defaultOpen: _, ...incomingProps } = props
       let slot = { open: disclosureState.value === DisclosureStates.Open, close: api.close }
-      return render({ props: passThroughProps, slot, slots, attrs, name: 'Disclosure' })
+      return render({ props: incomingProps, slot, slots, attrs, name: 'Disclosure' })
     }
   },
 })
@@ -133,23 +133,25 @@ export let DisclosureButton = defineComponent({
     as: { type: [Object, String], default: 'button' },
     disabled: { type: [Boolean], default: false },
   },
-  setup(props, { attrs, slots }) {
+  setup(props, { attrs, slots, expose }) {
     let api = useDisclosureContext('DisclosureButton')
 
     let panelContext = useDisclosurePanelContext()
     let isWithinPanel = panelContext === null ? false : panelContext === api.panelId
 
-    let elementRef = ref(null)
+    let internalButtonRef = ref<HTMLButtonElement | null>(null)
+
+    expose({ el: internalButtonRef, $el: internalButtonRef })
 
     if (!isWithinPanel) {
       watchEffect(() => {
-        api.button.value = elementRef.value
+        api.button.value = internalButtonRef.value
       })
     }
 
     let type = useResolveButtonType(
       computed(() => ({ as: props.as, type: attrs.type })),
-      elementRef
+      internalButtonRef
     )
 
     function handleClick() {
@@ -199,16 +201,16 @@ export let DisclosureButton = defineComponent({
 
     return () => {
       let slot = { open: api.disclosureState.value === DisclosureStates.Open }
-      let propsWeControl = isWithinPanel
+      let ourProps = isWithinPanel
         ? {
-            ref: elementRef,
+            ref: internalButtonRef,
             type: type.value,
             onClick: handleClick,
             onKeydown: handleKeyDown,
           }
         : {
             id: api.buttonId,
-            ref: elementRef,
+            ref: internalButtonRef,
             type: type.value,
             'aria-expanded': props.disabled
               ? undefined
@@ -221,7 +223,7 @@ export let DisclosureButton = defineComponent({
           }
 
       return render({
-        props: { ...props, ...propsWeControl },
+        props: { ...props, ...ourProps },
         slot,
         attrs,
         slots,
@@ -240,8 +242,10 @@ export let DisclosurePanel = defineComponent({
     static: { type: Boolean, default: false },
     unmount: { type: Boolean, default: true },
   },
-  setup(props, { attrs, slots }) {
+  setup(props, { attrs, slots, expose }) {
     let api = useDisclosureContext('DisclosurePanel')
+
+    expose({ el: api.panel, $el: api.panel })
 
     provide(DisclosurePanelContext, api.panelId)
 
@@ -256,10 +260,10 @@ export let DisclosurePanel = defineComponent({
 
     return () => {
       let slot = { open: api.disclosureState.value === DisclosureStates.Open, close: api.close }
-      let propsWeControl = { id: api.panelId, ref: api.panel }
+      let ourProps = { id: api.panelId, ref: api.panel }
 
       return render({
-        props: { ...props, ...propsWeControl },
+        props: { ...props, ...ourProps },
         slot,
         attrs,
         slots,

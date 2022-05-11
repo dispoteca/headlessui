@@ -1,5 +1,11 @@
 import { useRef, useEffect, useCallback } from 'react'
 
+let Optional = Symbol()
+
+export function optionalRef<T>(cb: (ref: T) => void, isOptional = true) {
+  return Object.assign(cb, { [Optional]: isOptional })
+}
+
 export function useSyncRefs<TType>(
   ...refs: (React.MutableRefObject<TType | null> | ((instance: TType) => void) | null)[]
 ) {
@@ -9,7 +15,7 @@ export function useSyncRefs<TType>(
     cache.current = refs
   }, [refs])
 
-  return useCallback(
+  let syncRefs = useCallback(
     (value: TType) => {
       for (let ref of cache.current) {
         if (ref == null) continue
@@ -19,4 +25,13 @@ export function useSyncRefs<TType>(
     },
     [cache]
   )
+
+  return refs.every(
+    (ref) =>
+      ref == null ||
+      // @ts-expect-error
+      ref?.[Optional]
+  )
+    ? undefined
+    : syncRefs
 }

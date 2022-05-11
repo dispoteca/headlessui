@@ -152,7 +152,7 @@ export let TransitionChild = defineComponent({
     beforeLeave: () => true,
     afterLeave: () => true,
   },
-  setup(props, { emit, attrs, slots }) {
+  setup(props, { emit, attrs, slots, expose }) {
     if (!hasTransitionContext() && hasOpenClosed()) {
       return () =>
         h(
@@ -171,6 +171,8 @@ export let TransitionChild = defineComponent({
     let container = ref<HTMLElement | null>(null)
     let state = ref(TreeStates.Visible)
     let strategy = computed(() => (props.unmount ? RenderStrategy.Unmount : RenderStrategy.Hidden))
+
+    expose({ el: container, $el: container })
 
     let { show, appear } = useTransitionContext()
     let { register, unregister } = useParentNesting()
@@ -289,7 +291,7 @@ export let TransitionChild = defineComponent({
 
     onMounted(() => {
       watch(
-        [show, appear],
+        [show],
         (_oldValues, _newValues, onInvalidate) => {
           executeTransition(onInvalidate)
           initial.value = false
@@ -324,11 +326,11 @@ export let TransitionChild = defineComponent({
         ...rest
       } = props
 
-      let propsWeControl = { ref: container }
-      let passthroughProps = rest
+      let ourProps = { ref: container }
+      let incomingProps = rest
 
       return render({
-        props: { ...passthroughProps, ...propsWeControl },
+        props: { ...incomingProps, ...ourProps },
         slot: {},
         slots,
         attrs,
@@ -392,7 +394,7 @@ export let TransitionRoot = defineComponent({
       state.value = TreeStates.Hidden
     })
 
-    let initial = { value: true }
+    let initial = ref(true)
     let transitionBag = {
       show,
       appear: computed(() => props.appear || !initial.value),
@@ -414,7 +416,7 @@ export let TransitionRoot = defineComponent({
     provide(TransitionContext, transitionBag)
 
     return () => {
-      let passThroughProps = omit(props, ['show', 'appear', 'unmount'])
+      let incomingProps = omit(props, ['show', 'appear', 'unmount'])
       let sharedProps = { unmount: props.unmount }
 
       return render({
@@ -435,7 +437,7 @@ export let TransitionRoot = defineComponent({
                 onAfterLeave: () => emit('afterLeave'),
                 ...attrs,
                 ...sharedProps,
-                ...passThroughProps,
+                ...incomingProps,
               },
               slots.default
             ),

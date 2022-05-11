@@ -8,12 +8,14 @@ import React, {
   // Types
   ElementType,
   ReactNode,
+  Ref,
 } from 'react'
 
 import { Props } from '../../types'
 import { useId } from '../../hooks/use-id'
-import { render } from '../../utils/render'
+import { forwardRefWithAs, render } from '../../utils/render'
 import { useIsoMorphicEffect } from '../../hooks/use-iso-morphic-effect'
+import { useSyncRefs } from '../../hooks/use-sync-refs'
 
 // ---
 
@@ -86,24 +88,24 @@ export function useDescriptions(): [
 // ---
 
 let DEFAULT_DESCRIPTION_TAG = 'p' as const
-interface DescriptionRenderPropArg {}
-type DescriptionPropsWeControl = 'id'
 
-export function Description<TTag extends ElementType = typeof DEFAULT_DESCRIPTION_TAG>(
-  props: Props<TTag, DescriptionRenderPropArg, DescriptionPropsWeControl>
-) {
+export let Description = forwardRefWithAs(function Description<
+  TTag extends ElementType = typeof DEFAULT_DESCRIPTION_TAG
+>(props: Props<TTag, {}, 'id'>, ref: Ref<HTMLParagraphElement>) {
   let context = useDescriptionContext()
   let id = `headlessui-description-${useId()}`
+  let descriptionRef = useSyncRefs(ref)
 
   useIsoMorphicEffect(() => context.register(id), [id, context.register])
 
-  let passThroughProps = props
-  let propsWeControl = { ...context.props, id }
+  let theirProps = props
+  let ourProps = { ref: descriptionRef, ...context.props, id }
 
   return render({
-    props: { ...passThroughProps, ...propsWeControl },
+    ourProps,
+    theirProps,
     slot: context.slot || {},
     defaultTag: DEFAULT_DESCRIPTION_TAG,
     name: context.name || 'Description',
   })
-}
+})

@@ -1,4 +1,4 @@
-import React, { createElement, useState } from 'react'
+import React, { createElement, useRef, useState } from 'react'
 import { render } from '@testing-library/react'
 
 import { Dialog } from './dialog'
@@ -11,6 +11,7 @@ import {
   assertDialogTitle,
   getDialog,
   getDialogOverlay,
+  getDialogBackdrop,
   getByText,
   assertActiveElement,
   getDialogs,
@@ -19,6 +20,7 @@ import {
 import { click, press, Keys } from '../../test-utils/interactions'
 import { PropsOf } from '../../types'
 import { Transition } from '../transitions/transition'
+import { createPortal } from 'react-dom'
 
 jest.mock('../../hooks/use-id')
 
@@ -38,6 +40,8 @@ describe('Safe guards', () => {
   it.each([
     ['Dialog.Overlay', Dialog.Overlay],
     ['Dialog.Title', Dialog.Title],
+    ['Dialog.Backdrop', Dialog.Backdrop],
+    ['Dialog.Panel', Dialog.Panel],
   ])(
     'should error when we are using a <%s /> without a parent <Dialog />',
     suppressConsoleLogs((name, Component) => {
@@ -306,6 +310,110 @@ describe('Rendering', () => {
     )
   })
 
+  describe('Dialog.Backdrop', () => {
+    it(
+      'should throw an error if a Dialog.Backdrop is used without a Dialog.Panel',
+      suppressConsoleLogs(async () => {
+        function Example() {
+          let [isOpen, setIsOpen] = useState(false)
+          return (
+            <>
+              <button id="trigger" onClick={() => setIsOpen((v) => !v)}>
+                Trigger
+              </button>
+              <Dialog open={isOpen} onClose={setIsOpen}>
+                <Dialog.Backdrop />
+                <TabSentinel />
+              </Dialog>
+            </>
+          )
+        }
+
+        render(<Example />)
+
+        try {
+          await click(document.getElementById('trigger'))
+
+          expect(true).toBe(false)
+        } catch (e: unknown) {
+          expect((e as Error).message).toBe(
+            'A <Dialog.Backdrop /> component is being used, but a <Dialog.Panel /> component is missing.'
+          )
+        }
+      })
+    )
+
+    it(
+      'should not throw an error if a Dialog.Backdrop is used with a Dialog.Panel',
+      suppressConsoleLogs(async () => {
+        function Example() {
+          let [isOpen, setIsOpen] = useState(false)
+          return (
+            <>
+              <button id="trigger" onClick={() => setIsOpen((v) => !v)}>
+                Trigger
+              </button>
+              <Dialog open={isOpen} onClose={setIsOpen}>
+                <Dialog.Backdrop />
+                <Dialog.Panel>
+                  <TabSentinel />
+                </Dialog.Panel>
+              </Dialog>
+            </>
+          )
+        }
+
+        render(<Example />)
+
+        await click(document.getElementById('trigger'))
+      })
+    )
+
+    it(
+      'should portal the Dialog.Backdrop',
+      suppressConsoleLogs(async () => {
+        function Example() {
+          let [isOpen, setIsOpen] = useState(false)
+          return (
+            <>
+              <button id="trigger" onClick={() => setIsOpen((v) => !v)}>
+                Trigger
+              </button>
+              <Dialog open={isOpen} onClose={setIsOpen}>
+                <Dialog.Backdrop />
+                <Dialog.Panel>
+                  <TabSentinel />
+                </Dialog.Panel>
+              </Dialog>
+            </>
+          )
+        }
+
+        render(<Example />)
+
+        await click(document.getElementById('trigger'))
+
+        let dialog = getDialog()
+        let backdrop = getDialogBackdrop()
+
+        expect(dialog).not.toBe(null)
+        dialog = dialog as HTMLElement
+
+        expect(backdrop).not.toBe(null)
+        backdrop = backdrop as HTMLElement
+
+        // It should not be nested
+        let position = dialog.compareDocumentPosition(backdrop)
+        expect(position & Node.DOCUMENT_POSITION_CONTAINED_BY).not.toBe(
+          Node.DOCUMENT_POSITION_CONTAINED_BY
+        )
+
+        // It should be a sibling
+        expect(position & Node.DOCUMENT_POSITION_FOLLOWING).toBe(Node.DOCUMENT_POSITION_FOLLOWING)
+      })
+    )
+  })
+
   describe('Dialog.Title', () => {
     it(
       'should be possible to render Dialog.Title using a render prop',
@@ -512,6 +620,57 @@ describe('Keyboard interactions', () => {
 
         // Verify it is still open
         assertDialog({ state: DialogState.Visible })
+      })
+    )
+  })
+
+  describe('`Tab` key', () => {
+    it(
+      'should be possible to tab around when using the initialFocus ref',
+      suppressConsoleLogs(async () => {
+        function Example() {
+          let [isOpen, setIsOpen] = useState(false)
+          let initialFocusRef = useRef(null)
+          return (
+            <>
+              <button id="trigger" onClick={() => setIsOpen((v) => !v)}>
+                Trigger
+              </button>
+              <Dialog open={isOpen} onClose={setIsOpen} initialFocus={initialFocusRef}>
+                Contents
+                <TabSentinel id="a" />
+                <input type="text" id="b" ref={initialFocusRef} />
+              </Dialog>
+            </>
+          )
+        }
+        render(<Example />)
+
+        assertDialog({ state: DialogState.InvisibleUnmounted })
+
+        // Open dialog
+        await click(document.getElementById('trigger'))
+
+        // Verify it is open
+        assertDialog({
+          state: DialogState.Visible,
+          attributes: { id: 'headlessui-dialog-1' },
+        })
+
+        // Verify that the input field is focused
+        assertActiveElement(document.getElementById('b'))
+
+        // Verify that we can tab around
+        await press(Keys.Tab)
+        assertActiveElement(document.getElementById('a'))
+
+        // Verify that we can tab around
+        await press(Keys.Tab)
+        assertActiveElement(document.getElementById('b'))
+
+        // Verify that we can tab around
+        await press(Keys.Tab)
+        assertActiveElement(document.getElementById('a'))
       })
     )
   })
@@ -755,6 +914,156 @@ describe('Mouse interactions', () => {
       expect(wrapperFn).toHaveBeenCalledTimes(0)
     })
   )
+
+  it(
+    'should should be possible to click on removed elements without closing the Dialog',
+    suppressConsoleLogs(async () => {
+      function Example() {
+        let [isOpen, setIsOpen] = useState(true)
+        let wrapper = useRef<HTMLDivElement | null>(null)
+
+        return (
+          <Dialog open={isOpen} onClose={setIsOpen}>
+            <div ref={wrapper}>
+              Contents
+              <button
+                onMouseDown={() => {
+                  // Remove this button before the Dialog's mousedown listener fires:
+                  wrapper.current?.remove()
+                }}
+              >
+                Inside
+              </button>
+              <TabSentinel />
+            </div>
+          </Dialog>
+        )
+      }
+      render(<Example />)
+
+      // Verify it is open
+      assertDialog({ state: DialogState.Visible })
+
+      // Click the button inside the the Dialog
+      await click(getByText('Inside'))
+
+      // Verify it is still open
+      assertDialog({ state: DialogState.Visible })
+    })
+  )
+
+  it(
+    'should be possible to click on elements created by third party libraries',
+    suppressConsoleLogs(async () => {
+      let fn = jest.fn()
+      function ThirdPartyLibrary() {
+        return createPortal(
+          <>
+            <button data-lib onClick={fn}>
+              3rd party button
+            </button>
+          </>,
+          document.body
+        )
+      }
+
+      function Example() {
+        let [isOpen, setIsOpen] = useState(true)
+
+        return (
+          <div>
+            <span>Main app</span>
+            <Dialog open={isOpen} onClose={setIsOpen}>
+              <div>
+                Contents
+                <TabSentinel />
+              </div>
+            </Dialog>
+            <ThirdPartyLibrary />
+          </div>
+        )
+      }
+      render(<Example />)
+
+      // Verify it is open
+      assertDialog({ state: DialogState.Visible })
+
+      // Click the button inside the 3rd party library
+      await click(document.querySelector('[data-lib]'))
+
+      // Verify we clicked on the 3rd party button
+      expect(fn).toHaveBeenCalledTimes(1)
+
+      // Verify the dialog is still open
+      assertDialog({ state: DialogState.Visible })
+    })
+  )
+
+  it(
+    'should close the Dialog if we click outside the Dialog.Panel',
+    suppressConsoleLogs(async () => {
+      function Example() {
+        let [isOpen, setIsOpen] = useState(false)
+        return (
+          <>
+            <button id="trigger" onClick={() => setIsOpen((v) => !v)}>
+              Trigger
+            </button>
+            <Dialog open={isOpen} onClose={setIsOpen}>
+              <Dialog.Backdrop />
+              <Dialog.Panel>
+                <TabSentinel />
+              </Dialog.Panel>
+              <button id="outside">Outside, technically</button>
+            </Dialog>
+          </>
+        )
+      }
+
+      render(<Example />)
+
+      await click(document.getElementById('trigger'))
+
+      assertDialog({ state: DialogState.Visible })
+
+      await click(document.getElementById('outside'))
+
+      assertDialog({ state: DialogState.InvisibleUnmounted })
+    })
+  )
+
+  it(
+    'should not close the Dialog if we click inside the Dialog.Panel',
+    suppressConsoleLogs(async () => {
+      function Example() {
+        let [isOpen, setIsOpen] = useState(false)
+        return (
+          <>
+            <button id="trigger" onClick={() => setIsOpen((v) => !v)}>
+              Trigger
+            </button>
+            <Dialog open={isOpen} onClose={setIsOpen}>
+              <Dialog.Backdrop />
+              <Dialog.Panel>
+                <button id="inside">Inside</button>
+                <TabSentinel />
+              </Dialog.Panel>
+            </Dialog>
+          </>
+        )
+      }
+
+      render(<Example />)
+
+      await click(document.getElementById('trigger'))
+
+      assertDialog({ state: DialogState.Visible })
+
+      await click(document.getElementById('inside'))
+
+      assertDialog({ state: DialogState.Visible })
+    })
+  )
 })
 
 describe('Nesting', () => {
@@ -762,19 +1071,17 @@ describe('Nesting', () => {
     let [showChild, setShowChild] = useState(false)
 
     return (
-      <>
-        <Dialog open={true} onClose={onClose}>
-          <Dialog.Overlay />
+      <Dialog open={true} onClose={onClose}>
+        <Dialog.Overlay />
 
-          <div>
-            <p>Level: {level}</p>
-            <button onClick={() => setShowChild(true)}>Open {level + 1} a</button>
-            <button onClick={() => setShowChild(true)}>Open {level + 1} b</button>
-            <button onClick={() => setShowChild(true)}>Open {level + 1} c</button>
-          </div>
-          {showChild && <Nested onClose={setShowChild} level={level + 1} />}
-        </Dialog>
-      </>
+        <div>
+          <p>Level: {level}</p>
+          <button onClick={() => setShowChild(true)}>Open {level + 1} a</button>
+          <button onClick={() => setShowChild(true)}>Open {level + 1} b</button>
+          <button onClick={() => setShowChild(true)}>Open {level + 1} c</button>
+        </div>
+        {showChild && <Nested onClose={setShowChild} level={level + 1} />}
+      </Dialog>
     )
   }
 

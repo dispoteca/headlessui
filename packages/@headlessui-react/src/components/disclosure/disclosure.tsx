@@ -22,12 +22,13 @@ import React, {
 import { Props } from '../../types'
 import { match } from '../../utils/match'
 import { forwardRefWithAs, render, Features, PropsForFeatures } from '../../utils/render'
-import { useSyncRefs } from '../../hooks/use-sync-refs'
+import { optionalRef, useSyncRefs } from '../../hooks/use-sync-refs'
 import { useId } from '../../hooks/use-id'
 import { Keys } from '../keyboard'
 import { isDisabledReactIssue7711 } from '../../utils/bugs'
 import { OpenClosedProvider, State, useOpenClosed } from '../../internal/open-closed'
 import { useResolveButtonType } from '../../hooks/use-resolve-button-type'
+import { getOwnerDocument } from '../../utils/owner'
 
 enum DisclosureStates {
   Open,
@@ -38,6 +39,9 @@ interface StateDefinition {
   disclosureState: DisclosureStates
 
   linkedPanel: boolean
+
+  buttonRef: MutableRefObject<HTMLButtonElement | null>
+  panelRef: MutableRefObject<HTMLDivElement | null>
 
   buttonId: string
   panelId: string
@@ -103,7 +107,7 @@ DisclosureContext.displayName = 'DisclosureContext'
 function useDisclosureContext(component: string) {
   let context = useContext(DisclosureContext)
   if (context === null) {
-    let err = new Error(`<${component} /> is missing a parent <${Disclosure.name} /> component.`)
+    let err = new Error(`<${component} /> is missing a parent <Disclosure /> component.`)
     if (Error.captureStackTrace) Error.captureStackTrace(err, useDisclosureContext)
     throw err
   }
@@ -118,7 +122,7 @@ DisclosureAPIContext.displayName = 'DisclosureAPIContext'
 function useDisclosureAPIContext(component: string) {
   let context = useContext(DisclosureAPIContext)
   if (context === null) {
-    let err = new Error(`<${component} /> is missing a parent <${Disclosure.name} /> component.`)
+    let err = new Error(`<${component} /> is missing a parent <Disclosure /> component.`)
     if (Error.captureStackTrace) Error.captureStackTrace(err, useDisclosureAPIContext)
     throw err
   }
@@ -144,18 +148,38 @@ interface DisclosureRenderPropArg {
   close(focusableElement?: HTMLElement | MutableRefObject<HTMLElement | null>): void
 }
 
-export function Disclosure<TTag extends ElementType = typeof DEFAULT_DISCLOSURE_TAG>(
+let DisclosureRoot = forwardRefWithAs(function Disclosure<
+  TTag extends ElementType = typeof DEFAULT_DISCLOSURE_TAG
+>(
   props: Props<TTag, DisclosureRenderPropArg> & {
     defaultOpen?: boolean
-  }
+  },
+  ref: Ref<TTag>
 ) {
-  let { defaultOpen = false, ...passthroughProps } = props
+  let { defaultOpen = false, ...theirProps } = props
   let buttonId = `headlessui-disclosure-button-${useId()}`
   let panelId = `headlessui-disclosure-panel-${useId()}`
+  let internalDisclosureRef = useRef<HTMLElement | null>(null)
+  let disclosureRef = useSyncRefs(
+    ref,
+    optionalRef(
+      (ref) => {
+        internalDisclosureRef.current = ref as unknown as HTMLElement | null
+      },
+      props.as === undefined ||
+        // @ts-expect-error The `as` prop _can_ be a Fragment
+        props.as === React.Fragment
+    )
+  )
+
+  let panelRef = useRef<StateDefinition['panelRef']['current']>(null)
+  let buttonRef = useRef<StateDefinition['buttonRef']['current']>(null)
 
   let reducerBag = useReducer(stateReducer, {
     disclosureState: defaultOpen ? DisclosureStates.Open : DisclosureStates.Closed,
     linkedPanel: false,
+    buttonRef,
+    panelRef,
     buttonId,
     panelId,
   } as StateDefinition)
@@ -167,13 +191,15 @@ export function Disclosure<TTag extends ElementType = typeof DEFAULT_DISCLOSURE_
   let close = useCallback(
     (focusableElement?: HTMLElement | MutableRefObject<HTMLElement | null>) => {
       dispatch({ type: ActionTypes.CloseDisclosure })
+      let ownerDocument = getOwnerDocument(internalDisclosureRef)
+      if (!ownerDocument) return
 
       let restoreElement = (() => {
-        if (!focusableElement) return document.getElementById(buttonId)
+        if (!focusableElement) return ownerDocument.getElementById(buttonId)
         if (focusableElement instanceof HTMLElement) return focusableElement
         if (focusableElement.current instanceof HTMLElement) return focusableElement.current
 
-        return document.getElementById(buttonId)
+        return ownerDocument.getElementById(buttonId)
       })()
 
       restoreElement?.focus()
@@ -188,6 +214,10 @@ export function Disclosure<TTag extends ElementType = typeof DEFAULT_DISCLOSURE_
     [disclosureState, close]
   )
 
+  let ourProps = {
+    ref: disclosureRef,
+  }
+
   return (
     <DisclosureContext.Provider value={reducerBag}>
       <DisclosureAPIContext.Provider value={api}>
@@ -198,7 +228,8 @@ export function Disclosure<TTag extends ElementType = typeof DEFAULT_DISCLOSURE_
           })}
         >
           {render({
-            props: passthroughProps,
+            ourProps,
+            theirProps,
             slot,
             defaultTag: DEFAULT_DISCLOSURE_TAG,
             name: 'Disclosure',
@@ -207,7 +238,7 @@ export function Disclosure<TTag extends ElementType = typeof DEFAULT_DISCLOSURE_
       </DisclosureAPIContext.Provider>
     </DisclosureContext.Provider>
   )
-}
+})
 
 // ---
 
@@ -228,11 +259,11 @@ let Button = forwardRefWithAs(function Button<TTag extends ElementType = typeof 
   ref: Ref<HTMLButtonElement>
 ) {
   let [state, dispatch] = useDisclosureContext('Disclosure.Button')
-  let internalButtonRef = useRef<HTMLButtonElement | null>(null)
-  let buttonRef = useSyncRefs(internalButtonRef, ref)
-
   let panelContext = useDisclosurePanelContext()
   let isWithinPanel = panelContext === null ? false : panelContext === state.panelId
+
+  let internalButtonRef = useRef<HTMLButtonElement | null>(null)
+  let buttonRef = useSyncRefs(internalButtonRef, ref, !isWithinPanel ? state.buttonRef : null)
 
   let handleKeyDown = useCallback(
     (event: ReactKeyboardEvent<HTMLButtonElement>) => {
@@ -245,7 +276,7 @@ let Button = forwardRefWithAs(function Button<TTag extends ElementType = typeof 
             event.preventDefault()
             event.stopPropagation()
             dispatch({ type: ActionTypes.ToggleDisclosure })
-            document.getElementById(state.buttonId)?.focus()
+            state.buttonRef.current?.focus()
             break
         }
       } else {
@@ -259,7 +290,7 @@ let Button = forwardRefWithAs(function Button<TTag extends ElementType = typeof 
         }
       }
     },
-    [dispatch, isWithinPanel, state.disclosureState, state.buttonId]
+    [dispatch, isWithinPanel, state.disclosureState, state.buttonRef]
   )
 
   let handleKeyUp = useCallback((event: ReactKeyboardEvent<HTMLButtonElement>) => {
@@ -280,12 +311,12 @@ let Button = forwardRefWithAs(function Button<TTag extends ElementType = typeof 
 
       if (isWithinPanel) {
         dispatch({ type: ActionTypes.ToggleDisclosure })
-        document.getElementById(state.buttonId)?.focus()
+        state.buttonRef.current?.focus()
       } else {
         dispatch({ type: ActionTypes.ToggleDisclosure })
       }
     },
-    [dispatch, props.disabled, state.buttonId, isWithinPanel]
+    [dispatch, props.disabled, state.buttonRef, isWithinPanel]
   )
 
   let slot = useMemo<ButtonRenderPropArg>(
@@ -294,8 +325,8 @@ let Button = forwardRefWithAs(function Button<TTag extends ElementType = typeof 
   )
 
   let type = useResolveButtonType(props, internalButtonRef)
-  let passthroughProps = props
-  let propsWeControl = isWithinPanel
+  let theirProps = props
+  let ourProps = isWithinPanel
     ? { ref: buttonRef, type, onKeyDown: handleKeyDown, onClick: handleClick }
     : {
         ref: buttonRef,
@@ -311,7 +342,8 @@ let Button = forwardRefWithAs(function Button<TTag extends ElementType = typeof 
       }
 
   return render({
-    props: { ...passthroughProps, ...propsWeControl },
+    ourProps,
+    theirProps,
     slot,
     defaultTag: DEFAULT_BUTTON_TAG,
     name: 'Disclosure.Button',
@@ -337,7 +369,7 @@ let Panel = forwardRefWithAs(function Panel<TTag extends ElementType = typeof DE
   let [state, dispatch] = useDisclosureContext('Disclosure.Panel')
   let { close } = useDisclosureAPIContext('Disclosure.Panel')
 
-  let panelRef = useSyncRefs(ref, () => {
+  let panelRef = useSyncRefs(ref, state.panelRef, () => {
     if (state.linkedPanel) return
     dispatch({ type: ActionTypes.LinkPanel })
   })
@@ -365,16 +397,18 @@ let Panel = forwardRefWithAs(function Panel<TTag extends ElementType = typeof DE
     () => ({ open: state.disclosureState === DisclosureStates.Open, close }),
     [state, close]
   )
-  let propsWeControl = {
+
+  let theirProps = props
+  let ourProps = {
     ref: panelRef,
     id: state.panelId,
   }
-  let passthroughProps = props
 
   return (
     <DisclosurePanelContext.Provider value={state.panelId}>
       {render({
-        props: { ...passthroughProps, ...propsWeControl },
+        ourProps,
+        theirProps,
         slot,
         defaultTag: DEFAULT_PANEL_TAG,
         features: PanelRenderFeatures,
@@ -387,5 +421,4 @@ let Panel = forwardRefWithAs(function Panel<TTag extends ElementType = typeof DE
 
 // ---
 
-Disclosure.Button = Button
-Disclosure.Panel = Panel
+export let Disclosure = Object.assign(DisclosureRoot, { Button, Panel })

@@ -4,6 +4,17 @@
     "component": "./components/Home.vue"
   },
   {
+    "name": "Combinations",
+    "path": "/combinations",
+    "children": [
+      {
+        "name": "Tabs in Dialog",
+        "path": "/combinations/tabs-in-dialog",
+        "component": "./components/combinations/tabs-in-dialog.vue"
+      }
+    ]
+  },
+  {
     "name": "Combobox",
     "path": "/combobox",
     "children": [
@@ -21,6 +32,11 @@
         "name": "Command Palette (w/ Groups)",
         "path": "/combobox/command-palette-with-groups",
         "component": "./components/combobox/command-palette-with-groups.vue"
+      },
+      {
+        "name": "Combobox multi select",
+        "path": "/combobox/multi-select",
+        "component": "./components/combobox/multi-select.vue"
       }
     ]
   },
@@ -68,6 +84,11 @@
         "name": "Listbox multiple elements",
         "path": "/listbox/multiple-elements",
         "component": "./components/listbox/multiple-elements.vue"
+      },
+      {
+        "name": "Listbox multi select",
+        "path": "/listbox/multi-select",
+        "component": "./components/listbox/multi-select.vue"
       }
     ]
   },
@@ -145,6 +166,11 @@
         "name": "Dialog",
         "path": "/dialog/dialog",
         "component": "./components/dialog/dialog.vue"
+      },
+      {
+        "name": "Dialog Slide Over",
+        "path": "/dialog/slide-over",
+        "component": "./components/dialog/slide-over.vue"
       }
     ]
   },

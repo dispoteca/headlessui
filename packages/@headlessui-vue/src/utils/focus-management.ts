@@ -1,4 +1,5 @@
 import { match } from './match'
+import { getOwnerDocument } from './owner'
 
 // Credit:
 //  - https://stackoverflow.com/a/30753870
@@ -72,7 +73,7 @@ export function isFocusableElement(
   element: HTMLElement,
   mode: FocusableMode = FocusableMode.Strict
 ) {
-  if (element === document.body) return false
+  if (element === getOwnerDocument(element)?.body) return false
 
   return match(mode, {
     [FocusableMode.Strict]() {
@@ -95,17 +96,44 @@ export function focusElement(element: HTMLElement | null) {
   element?.focus({ preventScroll: true })
 }
 
-export function focusIn(container: HTMLElement | HTMLElement[], focus: Focus) {
-  let elements = Array.isArray(container)
-    ? container.slice().sort((a, z) => {
-        let position = a.compareDocumentPosition(z)
+// https://developer.mozilla.org/en-US/docs/Web/API/HTMLInputElement/select
+let selectableSelector = ['textarea', 'input'].join(',')
+function isSelectableElement(
+  element: Element | null
+): element is HTMLInputElement | HTMLTextAreaElement {
+  return element?.matches?.(selectableSelector) ?? false
+}
 
-        if (position & Node.DOCUMENT_POSITION_FOLLOWING) return -1
-        if (position & Node.DOCUMENT_POSITION_PRECEDING) return 1
-        return 0
-      })
+export function sortByDomNode<T>(
+  nodes: T[],
+  resolveKey: (item: T) => HTMLElement | null = (i) => i as unknown as HTMLElement | null
+): T[] {
+  return nodes.slice().sort((aItem, zItem) => {
+    let a = resolveKey(aItem)
+    let z = resolveKey(zItem)
+
+    if (a === null || z === null) return 0
+
+    let position = a.compareDocumentPosition(z)
+
+    if (position & Node.DOCUMENT_POSITION_FOLLOWING) return -1
+    if (position & Node.DOCUMENT_POSITION_PRECEDING) return 1
+    return 0
+  })
+}
+
+export function focusIn(container: HTMLElement | HTMLElement[], focus: Focus) {
+  let ownerDocument =
+    (Array.isArray(container)
+      ? container.length > 0
+        ? container[0].ownerDocument
+        : document
+      : container?.ownerDocument) ?? document
+
+  let elements = Array.isArray(container)
+    ? sortByDomNode(container)
     : getFocusableElements(container)
-  let active = document.activeElement as HTMLElement
+  let active = ownerDocument.activeElement as HTMLElement
 
   let direction = (() => {
     if (focus & (Focus.First | Focus.Next)) return Direction.Next
@@ -148,7 +176,7 @@ export function focusIn(container: HTMLElement | HTMLElement[], focus: Focus) {
 
     // Try the next one in line
     offset += direction
-  } while (next !== document.activeElement)
+  } while (next !== ownerDocument.activeElement)
 
   // This is a little weird, but let me try and explain: There are a few scenario's
   // in chrome for example where a focused `<a>` tag does not get the default focus
@@ -158,6 +186,18 @@ export function focusIn(container: HTMLElement | HTMLElement[], focus: Focus) {
   // However in that case the default focus styles are not applied *unless* you
   // also add this tabindex.
   if (!next.hasAttribute('tabindex')) next.setAttribute('tabindex', '0')
+
+  // By default if you <Tab> to a text input or a textarea, the browser will
+  // select all the text once the focus is inside these DOM Nodes. However,
+  // since we are manually moving focus this behaviour is not happening. This
+  // code will make sure that the text gets selected as-if you did it manually.
+  // Note: We only do this when going forward / backward. Not for the
+  // Focus.First or Focus.Last actions. This is similar to the `autoFocus`
+  // behaviour on an input where the input will get focus but won't be
+  // selected.
+  if (focus & (Focus.Next | Focus.Previous) && isSelectableElement(next)) {
+    next.select()
+  }
 
   return FocusResult.Success
 }
