@@ -30,6 +30,7 @@ import { useLatestValue } from '../../hooks/use-latest-value'
 import { useServerHandoffComplete } from '../../hooks/use-server-handoff-complete'
 import { useSyncRefs } from '../../hooks/use-sync-refs'
 import { useTransition } from '../../hooks/use-transition'
+import { useEvent } from '../../hooks/use-event'
 
 type ID = ReturnType<typeof useId>
 
@@ -98,8 +99,8 @@ function useParentNesting() {
 
 interface NestingContextValues {
   children: MutableRefObject<{ id: ID; state: TreeStates }[]>
-  register: MutableRefObject<(id: ID) => () => void>
-  unregister: MutableRefObject<(id: ID, strategy?: RenderStrategy) => void>
+  register: (id: ID) => () => void
+  unregister: (id: ID, strategy?: RenderStrategy) => void
 }
 
 let NestingContext = createContext<NestingContextValues | null>(null)
@@ -117,7 +118,7 @@ function useNesting(done?: () => void) {
   let transitionableChildren = useRef<NestingContextValues['children']['current']>([])
   let mounted = useIsMounted()
 
-  let unregister = useLatestValue((childId: ID, strategy = RenderStrategy.Hidden) => {
+  let unregister = useEvent((childId: ID, strategy = RenderStrategy.Hidden) => {
     let idx = transitionableChildren.current.findIndex(({ id }) => id === childId)
     if (idx === -1) return
 
@@ -137,7 +138,7 @@ function useNesting(done?: () => void) {
     })
   })
 
-  let register = useLatestValue((childId: ID) => {
+  let register = useEvent((childId: ID) => {
     let child = transitionableChildren.current.find(({ id }) => id === childId)
     if (!child) {
       transitionableChildren.current.push({ id: childId, state: TreeStates.Visible })
@@ -145,7 +146,7 @@ function useNesting(done?: () => void) {
       child.state = TreeStates.Visible
     }
 
-    return () => unregister.current(childId, RenderStrategy.Unmount)
+    return () => unregister(childId, RenderStrategy.Unmount)
   })
 
   return useMemo(
@@ -217,20 +218,9 @@ let TransitionChild = forwardRefWithAs(function TransitionChild<
 
   let id = useId()
 
-  let transitionInFlight = useRef(false)
-
-  let nesting = useNesting(() => {
-    // When all children have been unmounted we can only hide ourselves if and only if we are not
-    // transitioning ourselves. Otherwise we would unmount before the transitions are finished.
-    if (!transitionInFlight.current) {
-      setState(TreeStates.Hidden)
-      unregister.current(id)
-    }
-  })
-
   useEffect(() => {
     if (!id) return
-    return register.current(id)
+    return register(id)
   }, [register, id])
 
   useEffect(() => {
@@ -245,8 +235,8 @@ let TransitionChild = forwardRefWithAs(function TransitionChild<
     }
 
     match(state, {
-      [TreeStates.Hidden]: () => unregister.current(id),
-      [TreeStates.Visible]: () => register.current(id),
+      [TreeStates.Hidden]: () => unregister(id),
+      [TreeStates.Visible]: () => register(id),
     })
   }, [state, id, register, unregister, show, strategy])
 
@@ -279,18 +269,33 @@ let TransitionChild = forwardRefWithAs(function TransitionChild<
     return show ? 'enter' : 'leave'
   })() as 'enter' | 'leave' | 'idle'
 
+  let transitioning = useRef(false)
+
+  let nesting = useNesting(() => {
+    if (transitioning.current) return
+
+    // When all children have been unmounted we can only hide ourselves if and only if we are not
+    // transitioning ourselves. Otherwise we would unmount before the transitions are finished.
+    setState(TreeStates.Hidden)
+    unregister(id)
+  })
+
   useTransition({
     container,
     classes,
     events,
     direction: transitionDirection,
-    onStart: useLatestValue(() => {}),
+    onStart: useLatestValue(() => {
+      transitioning.current = true
+    }),
     onStop: useLatestValue((direction) => {
+      transitioning.current = false
+
       if (direction === 'leave' && !hasChildren(nesting)) {
         // When we don't have children anymore we can safely unregister from the parent and hide
         // ourselves.
         setState(TreeStates.Hidden)
-        unregister.current(id)
+        unregister(id)
       }
     }),
   })
@@ -334,7 +339,8 @@ let TransitionRoot = forwardRefWithAs(function Transition<
 >(props: TransitionChildProps<TTag> & { show?: boolean; appear?: boolean }, ref: Ref<HTMLElement>) {
   // @ts-expect-error
   let { show, appear = false, unmount, ...theirProps } = props as typeof props
-  let transitionRef = useSyncRefs(ref)
+  let internalTransitionRef = useRef<HTMLElement | null>(null)
+  let transitionRef = useSyncRefs(internalTransitionRef, ref)
 
   // The TransitionChild will also call this hook, and we have to make sure that we are ready.
   useServerHandoffComplete()
@@ -385,6 +391,15 @@ let TransitionRoot = forwardRefWithAs(function Transition<
       setState(TreeStates.Visible)
     } else if (!hasChildren(nestingBag)) {
       setState(TreeStates.Hidden)
+    } else {
+      let node = internalTransitionRef.current
+      if (!node) return
+      let rect = node.getBoundingClientRect()
+
+      if (rect.x === 0 && rect.y === 0 && rect.width === 0 && rect.height === 0) {
+        // The node is completely hidden, let's hide it
+        setState(TreeStates.Hidden)
+      }
     }
   }, [show, nestingBag])
 
@@ -410,21 +425,21 @@ let TransitionRoot = forwardRefWithAs(function Transition<
   )
 })
 
-function Child<TTag extends ElementType = typeof DEFAULT_TRANSITION_CHILD_TAG>(
-  props: TransitionChildProps<TTag>
-) {
+let Child = forwardRefWithAs(function Child<
+  TTag extends ElementType = typeof DEFAULT_TRANSITION_CHILD_TAG
+>(props: TransitionChildProps<TTag>, ref: MutableRefObject<HTMLElement>) {
   let hasTransitionContext = useContext(TransitionContext) !== null
   let hasOpenClosedContext = useOpenClosed() !== null
 
   return (
     <>
       {!hasTransitionContext && hasOpenClosedContext ? (
-        <TransitionRoot {...props} />
+        <TransitionRoot ref={ref} {...props} />
       ) : (
-        <TransitionChild {...props} />
+        <TransitionChild ref={ref} {...props} />
       )}
     </>
   )
-}
+})
 
 export let Transition = Object.assign(TransitionRoot, { Child, Root: TransitionRoot })

@@ -30,7 +30,7 @@ import { match } from '../../utils/match'
 import { useResolveButtonType } from '../../hooks/use-resolve-button-type'
 import { FocusableMode, isFocusableElement, sortByDomNode } from '../../utils/focus-management'
 import { useOutsideClick } from '../../hooks/use-outside-click'
-import { VisuallyHidden } from '../../internal/visually-hidden'
+import { Hidden, Features as HiddenFeatures } from '../../internal/hidden'
 import { objectToFormEntries } from '../../utils/form'
 
 enum ListboxStates {
@@ -66,6 +66,8 @@ type StateDefinition = {
   orientation: Ref<'vertical' | 'horizontal'>
 
   mode: ComputedRef<ValueMode>
+
+  compare: (a: unknown, z: unknown) => boolean
 
   labelRef: Ref<HTMLLabelElement | null>
   buttonRef: Ref<HTMLButtonElement | null>
@@ -164,6 +166,9 @@ export let Listbox = defineComponent({
       listboxState,
       value,
       mode,
+      compare(a: any, z: any) {
+        return a === z
+      },
       orientation: computed(() => (props.horizontal ? 'horizontal' : 'vertical')),
       labelRef,
       buttonRef,
@@ -269,7 +274,7 @@ export let Listbox = defineComponent({
               let copy = toRaw(api.value.value as unknown[]).slice()
               let raw = toRaw(value)
 
-              let idx = copy.indexOf(raw)
+              let idx = copy.findIndex((value) => api.compare(raw, toRaw(value)))
               if (idx === -1) {
                 copy.push(raw)
               } else {
@@ -315,8 +320,9 @@ export let Listbox = defineComponent({
         ...(name != null && modelValue != null
           ? objectToFormEntries({ [name]: modelValue }).map(([name, value]) =>
               h(
-                VisuallyHidden,
+                Hidden,
                 compact({
+                  features: HiddenFeatures.Hidden,
                   key: name,
                   as: 'input',
                   type: 'hidden',
@@ -331,7 +337,7 @@ export let Listbox = defineComponent({
         render({
           props: {
             ...attrs,
-            ...omit(incomingProps, ['onUpdate:modelValue', 'horizontal', 'multiple']),
+            ...omit(incomingProps, ['onUpdate:modelValue', 'horizontal', 'multiple', 'by']),
           },
           slot,
           slots,
@@ -624,8 +630,11 @@ export let ListboxOption = defineComponent({
 
     let selected = computed(() =>
       match(api.mode.value, {
-        [ValueMode.Single]: () => toRaw(api.value.value) === toRaw(props.value),
-        [ValueMode.Multi]: () => (toRaw(api.value.value) as unknown[]).includes(toRaw(props.value)),
+        [ValueMode.Single]: () => api.compare(toRaw(api.value.value), toRaw(props.value)),
+        [ValueMode.Multi]: () =>
+          (toRaw(api.value.value) as unknown[]).some((value) =>
+            api.compare(toRaw(value), toRaw(props.value))
+          ),
       })
     )
     let isFirstSelected = computed(() => {
@@ -634,8 +643,9 @@ export let ListboxOption = defineComponent({
           let currentValues = toRaw(api.value.value) as unknown[]
 
           return (
-            api.options.value.find((option) => currentValues.includes(option.dataRef.value))?.id ===
-            id
+            api.options.value.find((option) =>
+              currentValues.some((value) => api.compare(toRaw(value), toRaw(option.dataRef.value)))
+            )?.id === id
           )
         },
         [ValueMode.Single]: () => selected.value,

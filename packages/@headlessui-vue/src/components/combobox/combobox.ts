@@ -32,7 +32,7 @@ import { useResolveButtonType } from '../../hooks/use-resolve-button-type'
 import { useTreeWalker } from '../../hooks/use-tree-walker'
 import { sortByDomNode } from '../../utils/focus-management'
 import { useOutsideClick } from '../../hooks/use-outside-click'
-import { VisuallyHidden } from '../../internal/visually-hidden'
+import { Hidden, Features as HiddenFeatures } from '../../internal/hidden'
 import { objectToFormEntries } from '../../utils/form'
 
 enum ComboboxStates {
@@ -62,6 +62,8 @@ type StateDefinition = {
 
   mode: ComputedRef<ValueMode>
   nullable: ComputedRef<boolean>
+
+  compare: (a: unknown, z: unknown) => boolean
 
   inputPropsRef: Ref<{ displayValue?: (item: unknown) => string }>
   optionsPropsRef: Ref<{ static: boolean; hold: boolean }>
@@ -172,6 +174,9 @@ export let Combobox = defineComponent({
       comboboxState,
       value,
       mode,
+      compare(a: any, z: any) {
+        return a === z
+      },
       nullable,
       inputRef,
       labelRef,
@@ -217,9 +222,11 @@ export let Combobox = defineComponent({
         let optionIdx = options.value.findIndex((option) => {
           let optionValue = toRaw(option.dataRef.value)
           let selected = match(mode.value, {
-            [ValueMode.Single]: () => toRaw(api.value.value) === toRaw(optionValue),
+            [ValueMode.Single]: () => api.compare(toRaw(api.value.value), toRaw(optionValue)),
             [ValueMode.Multi]: () =>
-              (toRaw(api.value.value) as unknown[]).includes(toRaw(optionValue)),
+              (toRaw(api.value.value) as unknown[]).some((value) =>
+                api.compare(toRaw(value), toRaw(optionValue))
+              ),
           })
 
           return selected
@@ -350,9 +357,11 @@ export let Combobox = defineComponent({
         if (activeOptionIndex.value === null) {
           let optionValue = (dataRef.value as any).value
           let selected = match(mode.value, {
-            [ValueMode.Single]: () => toRaw(api.value.value) === toRaw(optionValue),
+            [ValueMode.Single]: () => api.compare(toRaw(api.value.value), toRaw(optionValue)),
             [ValueMode.Multi]: () =>
-              (toRaw(api.value.value) as unknown[]).includes(toRaw(optionValue)),
+              (toRaw(api.value.value) as unknown[]).some((value) =>
+                api.compare(toRaw(value), toRaw(optionValue))
+              ),
           })
 
           if (selected) {
@@ -432,8 +441,9 @@ export let Combobox = defineComponent({
         ...(name != null && modelValue != null
           ? objectToFormEntries({ [name]: modelValue }).map(([name, value]) =>
               h(
-                VisuallyHidden,
+                Hidden,
                 compact({
+                  features: HiddenFeatures.Hidden,
                   key: name,
                   as: 'input',
                   type: 'hidden',
@@ -448,7 +458,7 @@ export let Combobox = defineComponent({
         render({
           props: {
             ...attrs,
-            ...omit(incomingProps, ['nullable', 'multiple', 'onUpdate:modelValue']),
+            ...omit(incomingProps, ['nullable', 'multiple', 'onUpdate:modelValue', 'by']),
           },
           slot,
           slots,
@@ -526,18 +536,6 @@ export let ComboboxButton = defineComponent({
           event.stopPropagation()
           if (api.comboboxState.value === ComboboxStates.Closed) {
             api.openCombobox()
-            // TODO: We can't do this outside next frame because the options aren't rendered yet
-            // But doing this in next frame results in a flicker because the dom mutations are async here
-            // Basically:
-            // Sync -> no option list yet
-            // Next frame -> option list already rendered with selection -> dispatch -> next frame -> now we have the focus on the right element
-
-            // TODO: The spec here is underspecified. There's mention of skipping to the next item when autocomplete has suggested something but nothing regarding a non-autocomplete selection/value
-            nextTick(() => {
-              if (!api.value.value) {
-                api.goToOption(Focus.First)
-              }
-            })
           }
           nextTick(() => api.inputRef.value?.focus({ preventScroll: true }))
           return
@@ -557,6 +555,7 @@ export let ComboboxButton = defineComponent({
           return
 
         case Keys.Escape:
+          if (api.comboboxState.value !== ComboboxStates.Open) return
           event.preventDefault()
           if (api.optionsRef.value && !api.optionsPropsRef.value.static) {
             event.stopPropagation()
@@ -630,6 +629,7 @@ export let ComboboxInput = defineComponent({
 
         case Keys.Backspace:
         case Keys.Delete:
+          if (api.comboboxState.value !== ComboboxStates.Open) return
           if (api.mode.value !== ValueMode.Single) return
           if (!api.nullable.value) return
 
@@ -668,14 +668,7 @@ export let ComboboxInput = defineComponent({
           event.stopPropagation()
           return match(api.comboboxState.value, {
             [ComboboxStates.Open]: () => api.goToOption(Focus.Next),
-            [ComboboxStates.Closed]: () => {
-              api.openCombobox()
-              nextTick(() => {
-                if (!api.value.value) {
-                  api.goToOption(Focus.First)
-                }
-              })
-            },
+            [ComboboxStates.Closed]: () => api.openCombobox(),
           })
 
         case Keys.ArrowUp:
@@ -706,6 +699,7 @@ export let ComboboxInput = defineComponent({
           return api.goToOption(Focus.Last)
 
         case Keys.Escape:
+          if (api.comboboxState.value !== ComboboxStates.Open) return
           event.preventDefault()
           if (api.optionsRef.value && !api.optionsPropsRef.value.static) {
             event.stopPropagation()
@@ -714,6 +708,7 @@ export let ComboboxInput = defineComponent({
           break
 
         case Keys.Tab:
+          if (api.comboboxState.value !== ComboboxStates.Open) return
           api.selectActiveOption()
           api.closeCombobox()
           break
@@ -745,7 +740,7 @@ export let ComboboxInput = defineComponent({
         onChange: handleChange,
         onInput: handleInput,
         role: 'combobox',
-        type: 'text',
+        type: attrs.type ?? 'text',
         tabIndex: 0,
         ref: api.inputRef,
       }
@@ -858,8 +853,11 @@ export let ComboboxOption = defineComponent({
 
     let selected = computed(() =>
       match(api.mode.value, {
-        [ValueMode.Single]: () => toRaw(api.value.value) === toRaw(props.value),
-        [ValueMode.Multi]: () => (toRaw(api.value.value) as unknown[]).includes(toRaw(props.value)),
+        [ValueMode.Single]: () => api.compare(toRaw(api.value.value), toRaw(props.value)),
+        [ValueMode.Multi]: () =>
+          (toRaw(api.value.value) as unknown[]).some((value) =>
+            api.compare(toRaw(value), toRaw(props.value))
+          ),
       })
     )
 

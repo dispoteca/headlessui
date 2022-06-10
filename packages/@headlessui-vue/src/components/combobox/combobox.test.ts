@@ -225,6 +225,113 @@ describe('Rendering', () => {
         assertComboboxList({ state: ComboboxState.InvisibleUnmounted })
       })
     )
+
+    describe.skip('Equality', () => {
+      let options = [
+        { id: 1, name: 'Alice' },
+        { id: 2, name: 'Bob' },
+        { id: 3, name: 'Charlie' },
+      ]
+
+      it(
+        'should use object equality by default',
+        suppressConsoleLogs(async () => {
+          renderTemplate({
+            template: html`
+              <Combobox v-model="value">
+                <ComboboxButton>Trigger</ComboboxButton>
+                <ComboboxOptions>
+                  <ComboboxOption
+                    v-for="option in options"
+                    :key="option.id"
+                    :value="option"
+                    v-slot="data"
+                    >{{ JSON.stringify(data) }}</ComboboxOption
+                  >
+                </ComboboxOptions>
+              </Combobox>
+            `,
+            setup: () => {
+              let value = ref(options[1])
+              return { options, value }
+            },
+          })
+
+          await click(getComboboxButton())
+
+          let bob = getComboboxOptions()[1]
+          expect(bob).toHaveTextContent(
+            JSON.stringify({ active: true, selected: true, disabled: false })
+          )
+        })
+      )
+
+      it(
+        'should be possible to compare objects by a field',
+        suppressConsoleLogs(async () => {
+          renderTemplate({
+            template: html`
+              <Combobox v-model="value" by="id">
+                <ComboboxButton>Trigger</ComboboxButton>
+                <ComboboxOptions>
+                  <ComboboxOption
+                    v-for="option in options"
+                    :key="option.id"
+                    :value="option"
+                    v-slot="data"
+                    >{{ JSON.stringify(data) }}</ComboboxOption
+                  >
+                </ComboboxOptions>
+              </Combobox>
+            `,
+            setup: () => {
+              let value = ref({ id: 2, name: 'Bob' })
+              return { options, value }
+            },
+          })
+
+          await click(getComboboxButton())
+
+          let bob = getComboboxOptions()[1]
+          expect(bob).toHaveTextContent(
+            JSON.stringify({ active: true, selected: true, disabled: false })
+          )
+        })
+      )
+
+      it(
+        'should be possible to compare objects by a comparator function',
+        suppressConsoleLogs(async () => {
+          renderTemplate({
+            template: html`
+              <Combobox v-model="value" :by="compare">
+                <ComboboxButton>Trigger</ComboboxButton>
+                <ComboboxOptions>
+                  <ComboboxOption
+                    v-for="option in options"
+                    :key="option.id"
+                    :value="option"
+                    v-slot="data"
+                    >{{ JSON.stringify(data) }}</ComboboxOption
+                  >
+                </ComboboxOptions>
+              </Combobox>
+            `,
+            setup: () => {
+              let value = ref({ id: 2, name: 'Bob' })
+              return { options, value, compare: (a: any, z: any) => a.id === z.id }
+            },
+          })
+
+          await click(getComboboxButton())
+
+          let bob = getComboboxOptions()[1]
+          expect(bob).toHaveTextContent(
+            JSON.stringify({ active: true, selected: true, disabled: false })
+          )
+        })
+      )
+    })
   })
 
   describe('Combobox.Input', () => {
@@ -286,6 +393,30 @@ describe('Rendering', () => {
         await click(getComboboxOptions()[1])
 
         expect(getComboboxInput()).toHaveValue('B')
+      })
+    )
+
+    it(
+      'should be possible to override the `type` on the input',
+      suppressConsoleLogs(async () => {
+        let Example = defineComponent({
+          template: html`
+            <Combobox v-model="value">
+              <ComboboxInput type="search" />
+              <ComboboxButton>Trigger</ComboboxButton>
+              <ComboboxOptions>
+                <ComboboxOption value="a">Option A</ComboboxOption>
+                <ComboboxOption value="b">Option B</ComboboxOption>
+                <ComboboxOption value="c">Option C</ComboboxOption>
+              </ComboboxOptions>
+            </Combobox>
+          `,
+          setup: () => ({ value: ref(null) }),
+        })
+
+        renderTemplate(Example)
+
+        expect(getComboboxInput()).toHaveAttribute('type', 'search')
       })
     )
   })
@@ -1511,6 +1642,74 @@ describe('Keyboard interactions', () => {
 
           // Verify the input is focused again
           assertActiveElement(getComboboxInput())
+        })
+      )
+
+      it(
+        'should not propagate the Escape event when the combobox is open',
+        suppressConsoleLogs(async () => {
+          let handleKeyDown = jest.fn()
+          renderTemplate({
+            template: html`
+              <Combobox v-model="value">
+                <ComboboxInput />
+                <ComboboxButton>Trigger</ComboboxButton>
+                <ComboboxOptions>
+                  <ComboboxOption value="a">Option A</ComboboxOption>
+                  <ComboboxOption value="b">Option B</ComboboxOption>
+                  <ComboboxOption value="c">Option C</ComboboxOption>
+                </ComboboxOptions>
+              </Combobox>
+            `,
+            setup: () => ({ value: ref(null) }),
+          })
+
+          window.addEventListener('keydown', handleKeyDown)
+
+          // Open combobox
+          await click(getComboboxButton())
+
+          // Close combobox
+          await press(Keys.Escape)
+
+          // We should never see the Escape event
+          expect(handleKeyDown).toHaveBeenCalledTimes(0)
+
+          window.removeEventListener('keydown', handleKeyDown)
+        })
+      )
+
+      it(
+        'should propagate the Escape event when the combobox is closed',
+        suppressConsoleLogs(async () => {
+          let handleKeyDown = jest.fn()
+          renderTemplate({
+            template: html`
+              <Combobox v-model="value">
+                <ComboboxInput />
+                <ComboboxButton>Trigger</ComboboxButton>
+                <ComboboxOptions>
+                  <ComboboxOption value="a">Option A</ComboboxOption>
+                  <ComboboxOption value="b">Option B</ComboboxOption>
+                  <ComboboxOption value="c">Option C</ComboboxOption>
+                </ComboboxOptions>
+              </Combobox>
+            `,
+            setup: () => ({ value: ref(null) }),
+          })
+
+          window.addEventListener('keydown', handleKeyDown)
+
+          // Focus the input field
+          await focus(getComboboxInput())
+
+          // Close combobox
+          await press(Keys.Escape)
+
+          // We should never see the Escape event
+          expect(handleKeyDown).toHaveBeenCalledTimes(1)
+
+          window.removeEventListener('keydown', handleKeyDown)
         })
       )
     })

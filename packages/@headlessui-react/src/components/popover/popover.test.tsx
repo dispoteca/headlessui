@@ -1,4 +1,4 @@
-import React, { createElement, useEffect, useRef } from 'react'
+import React, { createElement, useEffect, useRef, Fragment } from 'react'
 import { render } from '@testing-library/react'
 
 import { Popover } from './popover'
@@ -259,6 +259,38 @@ describe('Rendering', () => {
         assertActiveElement(getByText('restoreable'))
       })
     )
+
+    describe('refs', () => {
+      it(
+        'should be possible to get a ref to the Popover',
+        suppressConsoleLogs(async () => {
+          let popoverRef = { current: null }
+
+          render(
+            <Popover as="div" ref={popoverRef}>
+              <Popover.Button>Trigger</Popover.Button>
+              <Popover.Panel>Popover</Popover.Panel>
+            </Popover>
+          )
+
+          expect(popoverRef.current).not.toBeNull()
+        })
+      )
+
+      it(
+        'should be possible to use a Fragment with an optional ref',
+        suppressConsoleLogs(async () => {
+          render(
+            <Popover as={Fragment}>
+              <Popover.Button>Trigger</Popover.Button>
+              <Popover.Panel>Popover</Popover.Panel>
+            </Popover>
+          )
+
+          // It should not throw
+        })
+      )
+    })
   })
 
   describe('Popover.Button', () => {
@@ -1468,6 +1500,7 @@ describe('Keyboard interactions', () => {
 
         // Open the second popover
         await click(getByText('Trigger 2'))
+        getByText('Trigger 2')?.focus()
 
         // Ensure the second popover is open
         assertPopoverButton({ state: PopoverState.Visible }, getByText('Trigger 2'))
@@ -2114,6 +2147,7 @@ describe('Mouse interactions', () => {
 
       // Open popover
       await click(getPopoverButton())
+      getPopoverButton()?.focus()
 
       // Verify it is open
       assertPopoverButton({ state: PopoverState.Visible })
@@ -2235,6 +2269,64 @@ describe('Mouse interactions', () => {
 
       // Verify it is still open
       assertPopoverButton({ state: PopoverState.InvisibleHidden })
+    })
+  )
+
+  it(
+    'should be possible to close the Popover by clicking on the Popover.Button outside the Popover.Panel',
+    suppressConsoleLogs(async () => {
+      render(
+        <Popover>
+          <Popover.Button>Toggle</Popover.Button>
+          <Popover.Panel>
+            <button>Contents</button>
+          </Popover.Panel>
+        </Popover>
+      )
+
+      // Open the popover
+      await click(getPopoverButton())
+
+      // Verify it is open
+      assertPopoverPanel({ state: PopoverState.Visible })
+
+      // Close the popover
+      await click(getPopoverButton())
+
+      // Verify it is closed
+      assertPopoverPanel({ state: PopoverState.InvisibleUnmounted })
+
+      // Verify the button is focused
+      assertActiveElement(getPopoverButton())
+    })
+  )
+
+  it(
+    'should be possible to close the Popover by clicking on the Popover.Button outside the Popover.Panel (when using the `focus` prop)',
+    suppressConsoleLogs(async () => {
+      render(
+        <Popover>
+          <Popover.Button>Toggle</Popover.Button>
+          <Popover.Panel focus>
+            <button>Contents</button>
+          </Popover.Panel>
+        </Popover>
+      )
+
+      // Open the popover
+      await click(getPopoverButton())
+
+      // Verify it is open
+      assertPopoverPanel({ state: PopoverState.Visible })
+
+      // Close the popover
+      await click(getPopoverButton())
+
+      // Verify it is closed
+      assertPopoverPanel({ state: PopoverState.InvisibleUnmounted })
+
+      // Verify the button is focused
+      assertActiveElement(getPopoverButton())
     })
   )
 })

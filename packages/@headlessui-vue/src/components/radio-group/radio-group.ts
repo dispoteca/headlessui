@@ -23,7 +23,7 @@ import { compact, omit, render } from '../../utils/render'
 import { Label, useLabels } from '../label/label'
 import { Description, useDescriptions } from '../description/description'
 import { useTreeWalker } from '../../hooks/use-tree-walker'
-import { VisuallyHidden } from '../../internal/visually-hidden'
+import { Hidden, Features as HiddenFeatures } from '../../internal/hidden'
 import { attemptSubmit, objectToFormEntries } from '../../utils/form'
 import { getOwnerDocument } from '../../utils/owner'
 
@@ -40,6 +40,8 @@ interface StateDefinition {
   disabled: Ref<boolean>
   firstOption: Ref<Option | undefined>
   containsCheckedOption: Ref<boolean>
+
+  compare(a: unknown, z: unknown): boolean
 
   // State mutators
   change(nextValue: unknown): boolean
@@ -94,13 +96,18 @@ export let RadioGroup = defineComponent({
         })
       ),
       containsCheckedOption: computed(() =>
-        options.value.some((option) => toRaw(option.propsRef.value) === toRaw(props.modelValue))
+        options.value.some((option) =>
+          api.compare(toRaw(option.propsRef.value), toRaw(props.modelValue))
+        )
       ),
+      compare(a: any, z: any) {
+        return a === z
+      },
       change(nextValue: unknown) {
         if (props.disabled) return false
-        if (value.value === nextValue) return false
-        let nextOption = options.value.find(
-          (option) => toRaw(option.propsRef.value) === toRaw(nextValue)
+        if (api.compare(toRaw(value.value), toRaw(nextValue))) return false
+        let nextOption = options.value.find((option) =>
+          api.compare(toRaw(option.propsRef.value), toRaw(nextValue))
         )?.propsRef
         if (nextOption?.disabled) return false
         emit('update:modelValue', nextValue)
@@ -210,8 +217,9 @@ export let RadioGroup = defineComponent({
         ...(name != null && modelValue != null
           ? objectToFormEntries({ [name]: modelValue }).map(([name, value]) =>
               h(
-                VisuallyHidden,
+                Hidden,
                 compact({
+                  features: HiddenFeatures.Hidden,
                   key: name,
                   as: 'input',
                   type: 'hidden',
@@ -266,7 +274,7 @@ export let RadioGroupOption = defineComponent({
 
     let isFirstOption = computed(() => api.firstOption.value?.id === id)
     let disabled = computed(() => api.disabled.value || props.disabled)
-    let checked = computed(() => toRaw(api.value.value) === toRaw(props.value))
+    let checked = computed(() => api.compare(toRaw(api.value.value), toRaw(props.value)))
     let tabIndex = computed(() => {
       if (disabled.value) return -1
       if (checked.value) return 0

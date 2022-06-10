@@ -321,6 +321,143 @@ describe('Rendering', () => {
       assertActiveElement(getByText('Option 3'))
     })
   )
+
+  it.skip(
+    'should expose internal data as a render prop',
+    suppressConsoleLogs(async () => {
+      function Example() {
+        let [value, setValue] = useState(null)
+
+        return (
+          <RadioGroup value={value} onChange={setValue}>
+            <RadioGroup.Option value="a">Option 1</RadioGroup.Option>
+            <RadioGroup.Option value="b">Option 2</RadioGroup.Option>
+            <RadioGroup.Option value="c">Option 3</RadioGroup.Option>
+          </RadioGroup>
+        )
+      }
+
+      render(<Example />)
+
+      let options = getRadioGroupOptions()
+
+      // Nothing is active yet
+      expect(options[0]).toHaveAttribute('data-headlessui-state', '')
+      expect(options[1]).toHaveAttribute('data-headlessui-state', '')
+      expect(options[2]).toHaveAttribute('data-headlessui-state', '')
+
+      // Focus the RadioGroup
+      await press(Keys.Tab)
+
+      // The first one should be active, but not checked yet
+      expect(options[0]).toHaveAttribute('data-headlessui-state', 'active')
+      expect(options[1]).toHaveAttribute('data-headlessui-state', '')
+      expect(options[2]).toHaveAttribute('data-headlessui-state', '')
+
+      // Select the first one
+      await press(Keys.Space)
+
+      // The first one should be active and checked
+      expect(options[0]).toHaveAttribute('data-headlessui-state', 'checked active')
+      expect(options[1]).toHaveAttribute('data-headlessui-state', '')
+      expect(options[2]).toHaveAttribute('data-headlessui-state', '')
+
+      // Go to the next option
+      await press(Keys.ArrowDown)
+
+      // The second one should be active and checked
+      expect(options[0]).toHaveAttribute('data-headlessui-state', '')
+      expect(options[1]).toHaveAttribute('data-headlessui-state', 'checked active')
+      expect(options[2]).toHaveAttribute('data-headlessui-state', '')
+    })
+  )
+
+  describe.skip('Equality', () => {
+    let options = [
+      { id: 1, name: 'Alice' },
+      { id: 2, name: 'Bob' },
+      { id: 3, name: 'Charlie' },
+    ]
+
+    it(
+      'should use object equality by default',
+      suppressConsoleLogs(async () => {
+        render(
+          <RadioGroup value={options[1]} onChange={console.log}>
+            {options.map((option) => (
+              <RadioGroup.Option
+                key={option.id}
+                value={option}
+                className={(info) => JSON.stringify(info)}
+              >
+                {option.name}
+              </RadioGroup.Option>
+            ))}
+          </RadioGroup>
+        )
+
+        let bob = getRadioGroupOptions()[1]
+        expect(bob).toHaveAttribute(
+          'class',
+          JSON.stringify({ checked: true, disabled: false, active: false })
+        )
+      })
+    )
+
+    it(
+      'should be possible to compare objects by a field',
+      suppressConsoleLogs(async () => {
+        render(
+          <RadioGroup value={{ id: 2, name: 'Bob' }} onChange={console.log} by="id">
+            {options.map((option) => (
+              <RadioGroup.Option
+                key={option.id}
+                value={option}
+                className={(info) => JSON.stringify(info)}
+              >
+                {option.name}
+              </RadioGroup.Option>
+            ))}
+          </RadioGroup>
+        )
+
+        let bob = getRadioGroupOptions()[1]
+        expect(bob).toHaveAttribute(
+          'class',
+          JSON.stringify({ checked: true, disabled: false, active: false })
+        )
+      })
+    )
+
+    it(
+      'should be possible to compare objects by a comparator function',
+      suppressConsoleLogs(async () => {
+        render(
+          <RadioGroup
+            value={{ id: 2, name: 'Bob' }}
+            onChange={console.log}
+            by={(a, z) => a.id === z.id}
+          >
+            {options.map((option) => (
+              <RadioGroup.Option
+                key={option.id}
+                value={option}
+                className={(info) => JSON.stringify(info)}
+              >
+                {option.name}
+              </RadioGroup.Option>
+            ))}
+          </RadioGroup>
+        )
+
+        let bob = getRadioGroupOptions()[1]
+        expect(bob).toHaveAttribute(
+          'class',
+          JSON.stringify({ checked: true, disabled: false, active: false })
+        )
+      })
+    )
+  })
 })
 
 describe('Keyboard interactions', () => {

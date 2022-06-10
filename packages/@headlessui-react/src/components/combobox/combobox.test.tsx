@@ -170,6 +170,108 @@ describe('Rendering', () => {
         assertComboboxList({ state: ComboboxState.InvisibleUnmounted })
       })
     )
+
+    describe.skip('Equality', () => {
+      let options = [
+        { id: 1, name: 'Alice' },
+        { id: 2, name: 'Bob' },
+        { id: 3, name: 'Charlie' },
+      ]
+
+      it(
+        'should use object equality by default',
+        suppressConsoleLogs(async () => {
+          render(
+            <Combobox value={options[1]} onChange={console.log}>
+              <Combobox.Button>Trigger</Combobox.Button>
+              <Combobox.Options>
+                {options.map((option) => (
+                  <Combobox.Option
+                    key={option.id}
+                    value={option}
+                    className={(info) => JSON.stringify(info)}
+                  >
+                    {option.name}
+                  </Combobox.Option>
+                ))}
+              </Combobox.Options>
+            </Combobox>
+          )
+
+          await click(getComboboxButton())
+
+          let bob = getComboboxOptions()[1]
+          expect(bob).toHaveAttribute(
+            'class',
+            JSON.stringify({ active: true, selected: true, disabled: false })
+          )
+        })
+      )
+
+      it(
+        'should be possible to compare objects by a field',
+        suppressConsoleLogs(async () => {
+          render(
+            <Combobox value={{ id: 2, name: 'Bob' }} onChange={console.log} by="id">
+              <Combobox.Button>Trigger</Combobox.Button>
+              <Combobox.Options>
+                {options.map((option) => (
+                  <Combobox.Option
+                    key={option.id}
+                    value={option}
+                    className={(info) => JSON.stringify(info)}
+                  >
+                    {option.name}
+                  </Combobox.Option>
+                ))}
+              </Combobox.Options>
+            </Combobox>
+          )
+
+          await click(getComboboxButton())
+
+          let bob = getComboboxOptions()[1]
+          expect(bob).toHaveAttribute(
+            'class',
+            JSON.stringify({ active: true, selected: true, disabled: false })
+          )
+        })
+      )
+
+      it(
+        'should be possible to compare objects by a comparator function',
+        suppressConsoleLogs(async () => {
+          render(
+            <Combobox
+              value={{ id: 2, name: 'Bob' }}
+              onChange={console.log}
+              by={(a, z) => a.id === z.id}
+            >
+              <Combobox.Button>Trigger</Combobox.Button>
+              <Combobox.Options>
+                {options.map((option) => (
+                  <Combobox.Option
+                    key={option.id}
+                    value={option}
+                    className={(info) => JSON.stringify(info)}
+                  >
+                    {option.name}
+                  </Combobox.Option>
+                ))}
+              </Combobox.Options>
+            </Combobox>
+          )
+
+          await click(getComboboxButton())
+
+          let bob = getComboboxOptions()[1]
+          expect(bob).toHaveAttribute(
+            'class',
+            JSON.stringify({ active: true, selected: true, disabled: false })
+          )
+        })
+      )
+    })
   })
 
   describe('Combobox.Input', () => {
@@ -235,6 +337,31 @@ describe('Rendering', () => {
         await click(getComboboxOptions()[1])
 
         expect(getComboboxInput()).toHaveValue('B')
+      })
+    )
+
+    it(
+      'should be possible to override the `type` on the input',
+      suppressConsoleLogs(async () => {
+        function Example() {
+          let [value, setValue] = useState(undefined)
+
+          return (
+            <Combobox value={value} onChange={setValue}>
+              <Combobox.Input type="search" onChange={NOOP} />
+              <Combobox.Button>Trigger</Combobox.Button>
+              <Combobox.Options>
+                <Combobox.Option value="a">Option A</Combobox.Option>
+                <Combobox.Option value="b">Option B</Combobox.Option>
+                <Combobox.Option value="c">Option C</Combobox.Option>
+              </Combobox.Options>
+            </Combobox>
+          )
+        }
+
+        render(<Example />)
+
+        expect(getComboboxInput()).toHaveAttribute('type', 'search')
       })
     )
   })
@@ -1370,6 +1497,64 @@ describe('Keyboard interactions', () => {
 
           // Verify the input is focused again
           assertActiveElement(getComboboxInput())
+        })
+      )
+
+      it(
+        'should not propagate the Escape event when the combobox is open',
+        suppressConsoleLogs(async () => {
+          let handleKeyDown = jest.fn()
+          render(
+            <div onKeyDown={handleKeyDown}>
+              <Combobox value="test" onChange={console.log}>
+                <Combobox.Input onChange={NOOP} />
+                <Combobox.Button>Trigger</Combobox.Button>
+                <Combobox.Options>
+                  <Combobox.Option value="a">Option A</Combobox.Option>
+                  <Combobox.Option value="b">Option B</Combobox.Option>
+                  <Combobox.Option value="c">Option C</Combobox.Option>
+                </Combobox.Options>
+              </Combobox>
+            </div>
+          )
+
+          // Open combobox
+          await click(getComboboxButton())
+
+          // Close combobox
+          await press(Keys.Escape)
+
+          // We should never see the Escape event
+          expect(handleKeyDown).toHaveBeenCalledTimes(0)
+        })
+      )
+
+      it(
+        'should propagate the Escape event when the combobox is closed',
+        suppressConsoleLogs(async () => {
+          let handleKeyDown = jest.fn()
+          render(
+            <div onKeyDown={handleKeyDown}>
+              <Combobox value="test" onChange={console.log}>
+                <Combobox.Input onChange={NOOP} />
+                <Combobox.Button>Trigger</Combobox.Button>
+                <Combobox.Options>
+                  <Combobox.Option value="a">Option A</Combobox.Option>
+                  <Combobox.Option value="b">Option B</Combobox.Option>
+                  <Combobox.Option value="c">Option C</Combobox.Option>
+                </Combobox.Options>
+              </Combobox>
+            </div>
+          )
+
+          // Focus the input field
+          await focus(getComboboxInput())
+
+          // Close combobox
+          await press(Keys.Escape)
+
+          // We should never see the Escape event
+          expect(handleKeyDown).toHaveBeenCalledTimes(1)
         })
       )
     })
