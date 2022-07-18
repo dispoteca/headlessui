@@ -1,13 +1,5 @@
-import {
-  ComponentOptionsWithoutProps,
-  defineComponent,
-  h,
-  nextTick,
-  reactive,
-  ref,
-  watch,
-} from 'vue'
-import { render } from '../../test-utils/vue-testing-library'
+import { defineComponent, h, nextTick, reactive, ref, watch } from 'vue'
+import { createRenderTemplate, render } from '../../test-utils/vue-testing-library'
 import { Menu, MenuButton, MenuItems, MenuItem } from './menu'
 import { TransitionChild } from '../transitions/transition'
 import { suppressConsoleLogs } from '../../test-utils/suppress-console-logs'
@@ -61,21 +53,7 @@ function nextFrame() {
   })
 }
 
-function renderTemplate(input: string | ComponentOptionsWithoutProps) {
-  let defaultComponents = { Menu, MenuButton, MenuItems, MenuItem }
-
-  if (typeof input === 'string') {
-    return render(defineComponent({ template: input, components: defaultComponents }))
-  }
-
-  return render(
-    defineComponent(
-      Object.assign({}, input, {
-        components: { ...defaultComponents, ...input.components },
-      }) as Parameters<typeof defineComponent>[0]
-    )
-  )
-}
+const renderTemplate = createRenderTemplate({ Menu, MenuButton, MenuItems, MenuItem })
 
 describe('Safe guards', () => {
   it.each([
@@ -339,16 +317,16 @@ describe('Rendering', () => {
                   '',
                   'The current component <MenuButton /> is rendering a "template".',
                   'However we need to passthrough the following props:',
-                  '  - disabled',
-                  '  - ref',
-                  '  - id',
-                  '  - type',
-                  '  - aria-haspopup',
                   '  - aria-controls',
                   '  - aria-expanded',
+                  '  - aria-haspopup',
+                  '  - disabled',
+                  '  - id',
+                  '  - onClick',
                   '  - onKeydown',
                   '  - onKeyup',
-                  '  - onClick',
+                  '  - ref',
+                  '  - type',
                   '',
                   'You can apply a few solutions:',
                   '  - Add an `as="..."` prop, to ensure that we render an actual element instead of a "template".',
@@ -540,9 +518,9 @@ describe('Rendering', () => {
                 '  - id',
                 '  - onKeydown',
                 '  - onKeyup',
+                '  - ref',
                 '  - role',
                 '  - tabIndex',
-                '  - ref',
                 '',
                 'You can apply a few solutions:',
                 '  - Add an `as="..."` prop, to ensure that we render an actual element instead of a "template".',
@@ -702,18 +680,18 @@ describe('Rendering', () => {
                 '',
                 'The current component <MenuItem /> is rendering a "template".',
                 'However we need to passthrough the following props:',
+                '  - aria-disabled',
                 '  - disabled',
                 '  - id',
+                '  - onClick',
+                '  - onFocus',
+                '  - onMouseleave',
+                '  - onMousemove',
+                '  - onPointerleave',
+                '  - onPointermove',
                 '  - ref',
                 '  - role',
                 '  - tabIndex',
-                '  - aria-disabled',
-                '  - onClick',
-                '  - onFocus',
-                '  - onPointermove',
-                '  - onMousemove',
-                '  - onPointerleave',
-                '  - onMouseleave',
                 '',
                 'You can apply a few solutions:',
                 '  - Add an `as="..."` prop, to ensure that we render an actual element instead of a "template".',
@@ -3106,6 +3084,39 @@ describe('Mouse interactions', () => {
     })
   )
 
+  // TODO: This test doesn't work — and it would be more suited for browser testing anyway
+  it.skip(
+    'should be possible to click outside of the menu into an iframe and which should close the menu',
+    suppressConsoleLogs(async () => {
+      renderTemplate(`
+        <div>
+          <Menu>
+            <MenuButton>Trigger</MenuButton>
+            <MenuItems>
+              <menuitem as="a">alice</menuitem>
+              <menuitem as="a">bob</menuitem>
+              <menuitem as="a">charlie</menuitem>
+            </MenuItems>
+          </Menu>
+          <iframe :srcdoc="'<button>Trigger</button>'" frameborder="0" width="300" height="300"></iframe>
+        </div>
+      `)
+
+      // Open menu
+      await click(getMenuButton())
+      assertMenu({ state: MenuState.Visible })
+
+      // Click the input element in the iframe
+      await click(document.querySelector('iframe')?.contentDocument!.querySelector('button')!)
+
+      // Should be closed now
+      assertMenu({ state: MenuState.InvisibleUnmounted })
+
+      // Verify the button is focused again
+      assertActiveElement(getMenuButton())
+    })
+  )
+
   it('should be possible to hover an item and make it active', async () => {
     renderTemplate(jsx`
       <Menu>
@@ -3441,11 +3452,11 @@ describe('Mouse interactions', () => {
         <Menu>
           <MenuButton>Trigger</MenuButton>
           <MenuItems>
-            <MenuItem as="a" @click="clickHandler">alice</MenuItem>
-            <MenuItem as="a" @click="clickHandler" disabled>
+            <MenuItem as="button" @click="clickHandler">alice</MenuItem>
+            <MenuItem as="button" @click="clickHandler" disabled>
               bob
             </MenuItem>
-            <MenuItem>
+            <MenuItem disabled>
               <button @click="clickHandler">charlie</button>
             </MenuItem>
           </MenuItems>
@@ -3461,13 +3472,11 @@ describe('Mouse interactions', () => {
     let items = getMenuItems()
 
     await focus(items[0])
-    await focus(items[1])
-    await press(Keys.Enter)
+    await click(items[1])
     expect(clickHandler).not.toHaveBeenCalled()
 
     // Activate the last item
-    await focus(items[2])
-    await press(Keys.Enter)
+    await click(getMenuItems()[2])
     expect(clickHandler).not.toHaveBeenCalled()
   })
 })

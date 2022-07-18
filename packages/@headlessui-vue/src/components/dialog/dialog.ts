@@ -29,7 +29,7 @@ import { ForcePortalRoot } from '../../internal/portal-force-root'
 import { Description, useDescriptions } from '../description/description'
 import { dom } from '../../utils/dom'
 import { useOpenClosed, State } from '../../internal/open-closed'
-import { useOutsideClick, Features as OutsideClickFeatures } from '../../hooks/use-outside-click'
+import { useOutsideClick } from '../../hooks/use-outside-click'
 import { getOwnerDocument } from '../../utils/owner'
 import { useEventListener } from '../../hooks/use-event-listener'
 import { Hidden, Features as HiddenFeatures } from '../../internal/hidden'
@@ -78,6 +78,11 @@ export let Dialog = defineComponent({
   },
   emits: { close: (_close: boolean) => true },
   setup(props, { emit, attrs, slots, expose }) {
+    let ready = ref(false)
+    onMounted(() => {
+      ready.value = true
+    })
+
     let nestedDialogCount = ref(0)
 
     let usesOpenClosedState = useOpenClosed()
@@ -117,7 +122,9 @@ export let Dialog = defineComponent({
       )
     }
 
-    let dialogState = computed(() => (open.value ? DialogStates.Open : DialogStates.Closed))
+    let dialogState = computed(() =>
+      !ready.value ? DialogStates.Closed : open.value ? DialogStates.Open : DialogStates.Closed
+    )
     let enabled = computed(() => dialogState.value === DialogStates.Open)
 
     let hasNestedDialogs = computed(() => nestedDialogCount.value > 1) // 1 is the current dialog
@@ -179,7 +186,7 @@ export let Dialog = defineComponent({
       () => {
         // Third party roots
         let rootContainers = Array.from(
-          ownerDocument.value?.querySelectorAll('body > *') ?? []
+          ownerDocument.value?.querySelectorAll('body > *, [data-headlessui-portal]') ?? []
         ).filter((container) => {
           if (!(container instanceof HTMLElement)) return false // Skip non-HTMLElements
           if (container.contains(dom(mainTreeNode))) return false // Skip if it is the main app
@@ -191,13 +198,10 @@ export let Dialog = defineComponent({
       },
 
       (_event, target) => {
-        if (dialogState.value !== DialogStates.Open) return
-        if (hasNestedDialogs.value) return
-
         api.close()
         nextTick(() => target?.focus())
       },
-      OutsideClickFeatures.IgnoreScrollbars
+      computed(() => dialogState.value === DialogStates.Open && !hasNestedDialogs.value)
     )
 
     // Handle `Escape` to close
@@ -264,10 +268,6 @@ export let Dialog = defineComponent({
       onInvalidate(() => observer.disconnect())
     })
 
-    function handleClick(event: MouseEvent) {
-      event.stopPropagation()
-    }
-
     return () => {
       let ourProps = {
         // Manually passthrough the attributes, because Vue can't automatically pass
@@ -279,9 +279,8 @@ export let Dialog = defineComponent({
         'aria-modal': dialogState.value === DialogStates.Open ? true : undefined,
         'aria-labelledby': titleId.value,
         'aria-describedby': describedby.value,
-        onClick: handleClick,
       }
-      let { open: _, initialFocus, ...incomingProps } = props
+      let { open: _, initialFocus, ...theirProps } = props
 
       let slot = { open: dialogState.value === DialogStates.Open }
 
@@ -303,7 +302,8 @@ export let Dialog = defineComponent({
                 },
                 () =>
                   render({
-                    props: { ...incomingProps, ...ourProps },
+                    ourProps,
+                    theirProps,
                     slot,
                     attrs,
                     slots,
@@ -345,10 +345,11 @@ export let DialogOverlay = defineComponent({
         'aria-hidden': true,
         onClick: handleClick,
       }
-      let incomingProps = props
+      let theirProps = props
 
       return render({
-        props: { ...incomingProps, ...ourProps },
+        ourProps,
+        theirProps,
         slot: { open: api.dialogState.value === DialogStates.Open },
         attrs,
         slots,
@@ -382,7 +383,7 @@ export let DialogBackdrop = defineComponent({
     })
 
     return () => {
-      let incomingProps = props
+      let theirProps = props
       let ourProps = {
         id,
         ref: internalBackdropRef,
@@ -392,7 +393,8 @@ export let DialogBackdrop = defineComponent({
       return h(ForcePortalRoot, { force: true }, () =>
         h(Portal, () =>
           render({
-            props: { ...attrs, ...incomingProps, ...ourProps },
+            ourProps,
+            theirProps: { ...attrs, ...theirProps },
             slot: { open: api.dialogState.value === DialogStates.Open },
             attrs,
             slots,
@@ -417,15 +419,21 @@ export let DialogPanel = defineComponent({
 
     expose({ el: api.panelRef, $el: api.panelRef })
 
+    function handleClick(event: MouseEvent) {
+      event.stopPropagation()
+    }
+
     return () => {
       let ourProps = {
         id,
         ref: api.panelRef,
+        onClick: handleClick,
       }
-      let incomingProps = props
+      let theirProps = props
 
       return render({
-        props: { ...incomingProps, ...ourProps },
+        ourProps,
+        theirProps,
         slot: { open: api.dialogState.value === DialogStates.Open },
         attrs,
         slots,
@@ -453,10 +461,11 @@ export let DialogTitle = defineComponent({
 
     return () => {
       let ourProps = { id }
-      let incomingProps = props
+      let theirProps = props
 
       return render({
-        props: { ...incomingProps, ...ourProps },
+        ourProps,
+        theirProps,
         slot: { open: api.dialogState.value === DialogStates.Open },
         attrs,
         slots,

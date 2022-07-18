@@ -201,16 +201,18 @@ export let Menu = defineComponent({
     }
 
     // Handle outside click
-    useOutsideClick([buttonRef, itemsRef], (event, target) => {
-      if (menuState.value !== MenuStates.Open) return
+    useOutsideClick(
+      [buttonRef, itemsRef],
+      (event, target) => {
+        api.closeMenu()
 
-      api.closeMenu()
-
-      if (!isFocusableElement(target, FocusableMode.Loose)) {
-        event.preventDefault()
-        dom(buttonRef)?.focus()
-      }
-    })
+        if (!isFocusableElement(target, FocusableMode.Loose)) {
+          event.preventDefault()
+          dom(buttonRef)?.focus()
+        }
+      },
+      computed(() => menuState.value === MenuStates.Open)
+    )
 
     // @ts-expect-error Types of property 'dataRef' are incompatible.
     provide(MenuContext, api)
@@ -226,7 +228,7 @@ export let Menu = defineComponent({
 
     return () => {
       let slot = { open: menuState.value === MenuStates.Open }
-      return render({ props, slot, slots, attrs, name: 'Menu' })
+      return render({ ourProps: {}, theirProps: props, slot, slots, attrs, name: 'Menu' })
     }
   },
 })
@@ -289,7 +291,6 @@ export let MenuButton = defineComponent({
         nextTick(() => dom(api.buttonRef)?.focus({ preventScroll: true }))
       } else {
         event.preventDefault()
-        event.stopPropagation()
         api.openMenu()
         nextFrame(() => dom(api.itemsRef)?.focus({ preventScroll: true }))
       }
@@ -313,9 +314,11 @@ export let MenuButton = defineComponent({
         onKeyup: handleKeyUp,
         onClick: handleClick,
       }
+      let theirProps = props
 
       return render({
-        props: { ...props, ...ourProps },
+        ourProps,
+        theirProps,
         slot,
         attrs,
         slots,
@@ -457,10 +460,11 @@ export let MenuItems = defineComponent({
         ref: api.itemsRef,
       }
 
-      let incomingProps = props
+      let theirProps = props
 
       return render({
-        props: { ...incomingProps, ...ourProps },
+        ourProps,
+        theirProps,
         slot,
         attrs,
         slots,
@@ -550,9 +554,11 @@ export let MenuItem = defineComponent({
         onPointerleave: handleLeave,
         onMouseleave: handleLeave,
       }
+      let theirProps = props
 
       return render({
-        props: { ...props, ...ourProps },
+        ourProps,
+        theirProps,
         slot,
         attrs,
         slots,

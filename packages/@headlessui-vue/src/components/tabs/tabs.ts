@@ -154,10 +154,11 @@ export let TabGroup = defineComponent({
             },
           }),
         render({
-          props: {
+          theirProps: {
             ...attrs,
             ...omit(props, ['selectedIndex', 'defaultIndex', 'manual', 'vertical', 'onChange']),
           },
+          ourProps: {},
           slot,
           slots,
           attrs,
@@ -185,10 +186,11 @@ export let TabList = defineComponent({
         role: 'tablist',
         'aria-orientation': api.orientation.value,
       }
-      let incomingProps = props
+      let theirProps = props
 
       return render({
-        props: { ...incomingProps, ...ourProps },
+        ourProps,
+        theirProps,
         slot,
         attrs,
         slots,
@@ -247,18 +249,23 @@ export let Tab = defineComponent({
           return focusIn(list, Focus.Last)
       }
 
-      return match(api.orientation.value, {
-        vertical() {
-          if (event.key === Keys.ArrowUp) return focusIn(list, Focus.Previous | Focus.WrapAround)
-          if (event.key === Keys.ArrowDown) return focusIn(list, Focus.Next | Focus.WrapAround)
-          return
-        },
-        horizontal() {
-          if (event.key === Keys.ArrowLeft) return focusIn(list, Focus.Previous | Focus.WrapAround)
-          if (event.key === Keys.ArrowRight) return focusIn(list, Focus.Next | Focus.WrapAround)
-          return
-        },
-      })
+      if (
+        match(api.orientation.value, {
+          vertical() {
+            if (event.key === Keys.ArrowUp) return focusIn(list, Focus.Previous | Focus.WrapAround)
+            if (event.key === Keys.ArrowDown) return focusIn(list, Focus.Next | Focus.WrapAround)
+            return
+          },
+          horizontal() {
+            if (event.key === Keys.ArrowLeft)
+              return focusIn(list, Focus.Previous | Focus.WrapAround)
+            if (event.key === Keys.ArrowRight) return focusIn(list, Focus.Next | Focus.WrapAround)
+            return
+          },
+        })
+      ) {
+        return event.preventDefault()
+      }
     }
 
     function handleFocus() {
@@ -302,7 +309,8 @@ export let Tab = defineComponent({
       }
 
       return render({
-        props: { ...props, ...ourProps },
+        ourProps,
+        theirProps: props,
         slot,
         attrs,
         slots,
@@ -326,7 +334,8 @@ export let TabPanels = defineComponent({
       let slot = { selectedIndex: api.selectedIndex.value }
 
       return render({
-        props,
+        theirProps: props,
+        ourProps: {},
         slot,
         attrs,
         slots,
@@ -368,7 +377,8 @@ export let TabPanel = defineComponent({
       }
 
       return render({
-        props: { ...props, ...ourProps },
+        ourProps,
+        theirProps: props,
         slot,
         attrs,
         slots,

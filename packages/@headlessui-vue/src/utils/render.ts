@@ -1,4 +1,4 @@
-import { h, cloneVNode, Slots } from 'vue'
+import { h, cloneVNode, Slots, Fragment, VNode } from 'vue'
 import { match } from './match'
 
 export enum Features {
@@ -29,9 +29,12 @@ export enum RenderStrategy {
 export function render({
   visible = true,
   features = Features.None,
+  ourProps,
+  theirProps,
   ...main
 }: {
-  props: Record<string, any>
+  ourProps: Record<string, any>
+  theirProps: Record<string, any>
   slot: Record<string, any>
   attrs: Record<string, any>
   slots: Slots
@@ -40,16 +43,19 @@ export function render({
   features?: Features
   visible?: boolean
 }) {
+  let props = mergeProps(theirProps, ourProps)
+  let mainWithProps = Object.assign(main, { props })
+
   // Visible always render
-  if (visible) return _render(main)
+  if (visible) return _render(mainWithProps)
 
   if (features & Features.Static) {
     // When the `static` prop is passed as `true`, then the user is in control, thus we don't care about anything else
-    if (main.props.static) return _render(main)
+    if (props.static) return _render(mainWithProps)
   }
 
   if (features & Features.RenderStrategy) {
-    let strategy = main.props.unmount ?? true ? RenderStrategy.Unmount : RenderStrategy.Hidden
+    let strategy = props.unmount ?? true ? RenderStrategy.Unmount : RenderStrategy.Hidden
 
     return match(strategy, {
       [RenderStrategy.Unmount]() {
@@ -58,14 +64,14 @@ export function render({
       [RenderStrategy.Hidden]() {
         return _render({
           ...main,
-          props: { ...main.props, hidden: true, style: { display: 'none' } },
+          props: { ...props, hidden: true, style: { display: 'none' } },
         })
       },
     })
   }
 
   // No features enabled, just render
-  return _render(main)
+  return _render(mainWithProps)
 }
 
 function _render({
@@ -102,6 +108,8 @@ function _render({
   // }
 
   if (as === 'template') {
+    children = flattenFragments(children as VNode[])
+
     if (Object.keys(incomingProps).length > 0 || Object.keys(attrs).length > 0) {
       let [firstChild, ...other] = children ?? []
 
@@ -114,6 +122,7 @@ function _render({
             `However we need to passthrough the following props:`,
             Object.keys(incomingProps)
               .concat(Object.keys(attrs))
+              .sort((a, z) => a.localeCompare(z))
               .map((line) => `  - ${line}`)
               .join('\n'),
             '',
@@ -128,10 +137,7 @@ function _render({
         )
       }
 
-      return cloneVNode(
-        firstChild,
-        Object.assign({}, incomingProps as Record<string, any>, dataAttributes)
-      )
+      return cloneVNode(firstChild, Object.assign({}, incomingProps, dataAttributes))
     }
 
     if (Array.isArray(children) && children.length === 1) {
@@ -142,6 +148,87 @@ function _render({
   }
 
   return h(as, Object.assign({}, incomingProps, dataAttributes), children)
+}
+
+/**
+ * When passed a structure like this:
+ * <Example><span>something</span></Example>
+ *
+ * And Example is defined as:
+ * <SomeComponent><slot /></SomeComponent>
+ *
+ * We need to turn the fragment that <slot> represents into the slot.
+ * Luckily by this point it's already rendered into an array of VNodes
+ * for us so we can just flatten it directly.
+ *
+ * We have to do this recursively because there could be multiple
+ * levels of Component nesting all with <slot> elements interspersed
+ *
+ * @param children
+ * @returns
+ */
+function flattenFragments(children: VNode[]): VNode[] {
+  return children.flatMap((child) => {
+    if (child.type === Fragment) {
+      return flattenFragments(child.children as VNode[])
+    }
+
+    return [child]
+  })
+}
+
+function mergeProps(...listOfProps: Record<any, any>[]) {
+  if (listOfProps.length === 0) return {}
+  if (listOfProps.length === 1) return listOfProps[0]
+
+  let target: Record<any, any> = {}
+
+  let eventHandlers: Record<
+    string,
+    ((event: { defaultPrevented: boolean }, ...args: any[]) => void | undefined)[]
+  > = {}
+
+  for (let props of listOfProps) {
+    for (let prop in props) {
+      // Collect event handlers
+      if (prop.startsWith('on') && typeof props[prop] === 'function') {
+        eventHandlers[prop] ??= []
+        eventHandlers[prop].push(props[prop])
+      } else {
+        // Override incoming prop
+        target[prop] = props[prop]
+      }
+    }
+  }
+
+  // Do not attach any event handlers when there is a `disabled` or `aria-disabled` prop set.
+  if (target.disabled || target['aria-disabled']) {
+    return Object.assign(
+      target,
+      // Set all event listeners that we collected to `undefined`. This is
+      // important because of the `cloneElement` from above, which merges the
+      // existing and new props, they don't just override therefore we have to
+      // explicitly nullify them.
+      Object.fromEntries(Object.keys(eventHandlers).map((eventName) => [eventName, undefined]))
+    )
+  }
+
+  // Merge event handlers
+  for (let eventName in eventHandlers) {
+    Object.assign(target, {
+      [eventName](event: { defaultPrevented: boolean }, ...args: any[]) {
+        let handlers = eventHandlers[eventName]
+
+        for (let handler of handlers) {
+          if (event?.defaultPrevented) return
+
+          handler(event, ...args)
+        }
+      },
+    })
+  }
+
+  return target
 }
 
 export function compact<T extends Record<any, any>>(object: T) {

@@ -234,6 +234,7 @@ export async function click(
 ) {
   try {
     if (element === null) return expect(element).not.toBe(null)
+    if (element instanceof HTMLButtonElement && element.disabled) return
 
     let options = { button }
 

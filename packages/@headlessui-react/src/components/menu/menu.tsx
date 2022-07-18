@@ -277,18 +277,20 @@ let MenuRoot = forwardRefWithAs(function Menu<TTag extends ElementType = typeof 
   }, [onCloseCallback, propsRef])
 
   // Handle outside click
-  useOutsideClick([buttonRef, itemsRef], (event, target) => {
-    if (menuState !== MenuStates.Open) return
+  useOutsideClick(
+    [buttonRef, itemsRef],
+    (event, target) => {
+      if (!shouldClose || shouldClose(event)) {
+        dispatch({ type: MenuActionTypes.CloseMenu })
 
-    if (!shouldClose || shouldClose(event)) {
-      dispatch({ type: MenuActionTypes.CloseMenu })
-
-      if (!isFocusableElement(target, FocusableMode.Loose)) {
-        event.preventDefault()
-        propsRef.current.onClose(reducerBag[0], reducerBag[1])
+        if (!isFocusableElement(target, FocusableMode.Loose)) {
+          event.preventDefault()
+          propsRef.current.onClose(reducerBag[0], reducerBag[1])
+        }
       }
-    }
-  })
+    },
+    menuState === MenuStates.Open
+  )
 
   let slot = useMemo<MenuRenderPropArg>(
     () => ({ open: menuState === MenuStates.Open }),
@@ -389,7 +391,6 @@ let Button = forwardRefWithAs(function Button<TTag extends ElementType = typeof 
       }
     } else {
       event.preventDefault()
-      event.stopPropagation()
       dispatch({ type: MenuActionTypes.OpenMenu })
     }
   })

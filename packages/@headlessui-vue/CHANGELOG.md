@@ -12,6 +12,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Add `by` prop for `Listbox`, `Combobox` and `RadioGroup` ([#1482](https://github.com/tailwindlabs/headlessui/pull/1482))
 - Add `@headlessui/tailwindcss` plugin ([#1487](https://github.com/tailwindlabs/headlessui/pull/1487))
 
+## [1.6.6] - 2022-07-07
+
+### Fixed
+
+- Fix getting Vue dom elements ([#1610](https://github.com/tailwindlabs/headlessui/pull/1610))
+- Ensure `CMD`+`Backspace` works in nullable mode for `Combobox` component ([#1617](https://github.com/tailwindlabs/headlessui/pull/1617))
+- Properly merge incoming props with own props ([#1651](https://github.com/tailwindlabs/headlessui/pull/1651))
+- Ensure `PopoverPanel` can be used inside `<transition>` ([#1653](https://github.com/tailwindlabs/headlessui/pull/1653))
+
+## [1.6.5] - 2022-06-20
+
+### Fixed
+
+- Support `<slot>` children when using `as="template"` ([#1548](https://github.com/tailwindlabs/headlessui/pull/1548))
+- Improve outside click of `Dialog` component ([#1546](https://github.com/tailwindlabs/headlessui/pull/1546))
+- Detect outside clicks from within `<iframe>` elements ([#1552](https://github.com/tailwindlabs/headlessui/pull/1552))
+- Only render the `Dialog` on the client ([#1566](https://github.com/tailwindlabs/headlessui/pull/1566))
+- Improve Combobox input cursor position ([#1574](https://github.com/tailwindlabs/headlessui/pull/1574))
+- Fix scrolling issue in `Tab` component when using arrow keys ([#1584](https://github.com/tailwindlabs/headlessui/pull/1584))
+- Fix missing `aria-expanded` for `ComboboxInput` component ([#1605](https://github.com/tailwindlabs/headlessui/pull/1605))
+
 ## [1.6.4] - 2022-05-29
 
 ### Fixed
@@ -258,7 +279,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Everything!
 
-[unreleased]: https://github.com/tailwindlabs/headlessui/compare/@headlessui/vue@v1.6.4...HEAD
+[unreleased]: https://github.com/tailwindlabs/headlessui/compare/@headlessui/vue@v1.6.6...HEAD
+[1.6.6]: https://github.com/tailwindlabs/headlessui/compare/@headlessui/vue@v1.6.5...v1.6.6
+[1.6.5]: https://github.com/tailwindlabs/headlessui/compare/@headlessui/vue@v1.6.4...v1.6.5
 [1.6.4]: https://github.com/tailwindlabs/headlessui/compare/@headlessui/vue@v1.6.3...v1.6.4
 [1.6.3]: https://github.com/tailwindlabs/headlessui/compare/@headlessui/vue@v1.6.2...@headlessui/vue@v1.6.3
 [1.6.2]: https://github.com/tailwindlabs/headlessui/compare/@headlessui/vue@v1.6.1...@headlessui/vue@v1.6.2

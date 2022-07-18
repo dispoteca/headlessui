@@ -1,15 +1,5 @@
-import {
-  DefineComponent,
-  defineComponent,
-  nextTick,
-  ref,
-  watch,
-  h,
-  reactive,
-  computed,
-  PropType,
-} from 'vue'
-import { render } from '../../test-utils/vue-testing-library'
+import { defineComponent, nextTick, ref, watch, h, reactive, computed, PropType } from 'vue'
+import { createRenderTemplate, render } from '../../test-utils/vue-testing-library'
 import {
   Combobox,
   ComboboxInput,
@@ -55,6 +45,7 @@ import {
   assertCombobox,
   ComboboxMode,
   assertNotActiveComboboxOption,
+  assertComboboxInput,
 } from '../../test-utils/accessibility-assertions'
 import { html } from '../../test-utils/html'
 import { useOpenClosedProvider, State, useOpenClosed } from '../../internal/open-closed'
@@ -89,21 +80,7 @@ function getDefaultComponents() {
   }
 }
 
-function renderTemplate(input: string | Partial<DefineComponent>) {
-  let defaultComponents = getDefaultComponents()
-
-  if (typeof input === 'string') {
-    return render(defineComponent({ template: input, components: defaultComponents }))
-  }
-
-  return render(
-    defineComponent(
-      Object.assign({}, input, {
-        components: { ...defaultComponents, ...input.components },
-      }) as Parameters<typeof defineComponent>[0]
-    )
-  )
-}
+const renderTemplate = createRenderTemplate(getDefaultComponents())
 
 describe('safeguards', () => {
   it.each([
@@ -356,8 +333,11 @@ describe('Rendering', () => {
         // TODO: Rendering Example directly reveals a vue bug — I think it's been fixed for a while but I can't find the commit
         renderTemplate(Example)
 
+        assertComboboxInput({ state: ComboboxState.InvisibleUnmounted })
+
         await click(getComboboxButton())
 
+        assertComboboxInput({ state: ComboboxState.Visible })
         assertComboboxList({ state: ComboboxState.Visible })
 
         await click(getComboboxOptions()[1])
@@ -4852,7 +4832,7 @@ describe('Mouse interactions', () => {
             <ComboboxButton>Trigger</ComboboxButton>
             <ComboboxOptions>
               <ComboboxOption value="alice">alice</ComboboxOption>
-              <ComboboxOption disabled value="bob"> bob </ComboboxOption>
+              <ComboboxOption disabled value="bob">bob</ComboboxOption>
               <ComboboxOption value="charlie">charlie</ComboboxOption>
             </ComboboxOptions>
           </Combobox>
@@ -4869,7 +4849,7 @@ describe('Mouse interactions', () => {
 
       // We should not be able to focus the first option
       await focus(options[1])
-      assertNoActiveComboboxOption()
+      assertNotActiveComboboxOption(options[1])
     })
   )
 

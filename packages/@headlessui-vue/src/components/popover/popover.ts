@@ -211,24 +211,24 @@ export let Popover = defineComponent({
     )
 
     // Handle outside click
-    useOutsideClick([button, panel], (event, target) => {
-      if (popoverState.value !== PopoverStates.Open) return
+    useOutsideClick(
+      [button, panel],
+      (event, target) => {
+        api.closePopover()
 
-      api.closePopover()
-
-      if (!isFocusableElement(target, FocusableMode.Loose)) {
-        event.preventDefault()
-        dom(button)?.focus()
-      }
-    })
+        if (!isFocusableElement(target, FocusableMode.Loose)) {
+          event.preventDefault()
+          dom(button)?.focus()
+        }
+      },
+      computed(() => popoverState.value === PopoverStates.Open)
+    )
 
     return () => {
       let slot = { open: popoverState.value === PopoverStates.Open, close: api.close }
       return render({
-        props: {
-          ...props,
-          ref: internalPopoverRef,
-        },
+        theirProps: props,
+        ourProps: { ref: internalPopoverRef },
         slot,
         slots,
         attrs,
@@ -388,7 +388,8 @@ export let PopoverButton = defineComponent({
 
       return h(Fragment, [
         render({
-          props: { ...attrs, ...props, ...ourProps },
+          ourProps,
+          theirProps: { ...attrs, ...props },
           slot,
           attrs: attrs,
           slots: slots,
@@ -444,7 +445,8 @@ export let PopoverOverlay = defineComponent({
       }
 
       return render({
-        props: { ...props, ...ourProps },
+        ourProps,
+        theirProps: props,
         slot,
         attrs,
         slots,
@@ -540,7 +542,7 @@ export let PopoverPanel = defineComponent({
       function run() {
         match(direction.value, {
           [TabDirection.Forwards]: () => {
-            focusIn(el, Focus.First)
+            focusIn(el, Focus.Next)
           },
           [TabDirection.Backwards]: () => {
             // Coming from the Popover.Panel (which is portalled to somewhere else). Let's redirect
@@ -590,7 +592,7 @@ export let PopoverPanel = defineComponent({
 
             focusIn(combined, Focus.First, false)
           },
-          [TabDirection.Backwards]: () => focusIn(el, Focus.Last),
+          [TabDirection.Backwards]: () => focusIn(el, Focus.Previous),
         })
       }
 
@@ -616,37 +618,43 @@ export let PopoverPanel = defineComponent({
         tabIndex: -1,
       }
 
-      return h(Fragment, [
-        visible.value &&
-          api.isPortalled.value &&
-          h(Hidden, {
-            id: beforePanelSentinelId,
-            ref: api.beforePanelSentinel,
-            features: HiddenFeatures.Focusable,
-            as: 'button',
-            type: 'button',
-            onFocus: handleBeforeFocus,
-          }),
-        render({
-          props: { ...attrs, ...props, ...ourProps },
-          slot,
-          attrs,
-          slots,
-          features: Features.RenderStrategy | Features.Static,
-          visible: visible.value,
-          name: 'PopoverPanel',
-        }),
-        visible.value &&
-          api.isPortalled.value &&
-          h(Hidden, {
-            id: afterPanelSentinelId,
-            ref: api.afterPanelSentinel,
-            features: HiddenFeatures.Focusable,
-            as: 'button',
-            type: 'button',
-            onFocus: handleAfterFocus,
-          }),
-      ])
+      return render({
+        ourProps,
+        theirProps: { ...attrs, ...props },
+        attrs,
+        slot,
+        slots: {
+          ...slots,
+          default: (...args) => [
+            h(Fragment, [
+              visible.value &&
+                api.isPortalled.value &&
+                h(Hidden, {
+                  id: beforePanelSentinelId,
+                  ref: api.beforePanelSentinel,
+                  features: HiddenFeatures.Focusable,
+                  as: 'button',
+                  type: 'button',
+                  onFocus: handleBeforeFocus,
+                }),
+              slots.default?.(...args),
+              visible.value &&
+                api.isPortalled.value &&
+                h(Hidden, {
+                  id: afterPanelSentinelId,
+                  ref: api.afterPanelSentinel,
+                  features: HiddenFeatures.Focusable,
+                  as: 'button',
+                  type: 'button',
+                  onFocus: handleAfterFocus,
+                }),
+            ]),
+          ],
+        },
+        features: Features.RenderStrategy | Features.Static,
+        visible: visible.value,
+        name: 'PopoverPanel',
+      })
     }
   },
 })
@@ -710,7 +718,8 @@ export let PopoverGroup = defineComponent({
       let ourProps = { ref: groupRef }
 
       return render({
-        props: { ...props, ...ourProps },
+        ourProps,
+        theirProps: props,
         slot: {},
         attrs,
         slots,

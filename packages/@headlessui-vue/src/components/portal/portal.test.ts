@@ -1,6 +1,6 @@
 import { h, defineComponent, ref, nextTick, ComponentOptionsWithoutProps, createSSRApp } from 'vue'
 
-import { render } from '../../test-utils/vue-testing-library'
+import { createRenderTemplate } from '../../test-utils/vue-testing-library'
 import { renderToString } from 'vue/server-renderer'
 import { Portal, PortalGroup } from './portal'
 import { click } from '../../test-utils/interactions'
@@ -23,21 +23,7 @@ beforeAll(() => {
 
 afterAll(() => jest.restoreAllMocks())
 
-function renderTemplate(input: string | ComponentOptionsWithoutProps) {
-  let defaultComponents = { Portal, PortalGroup }
-
-  if (typeof input === 'string') {
-    return render(defineComponent({ template: input, components: defaultComponents }))
-  }
-
-  return render(
-    defineComponent(
-      Object.assign({}, input, {
-        components: { ...defaultComponents, ...input.components },
-      }) as Parameters<typeof defineComponent>[0]
-    )
-  )
-}
+const renderTemplate = createRenderTemplate({ Portal, PortalGroup })
 
 async function ssrRenderTemplate(input: string | ComponentOptionsWithoutProps) {
   let defaultComponents = { Portal, PortalGroup }
@@ -403,6 +389,6 @@ it('should be possible to force the Portal into a specific element using PortalG
   await new Promise<void>(nextTick)
 
   expect(document.body.innerHTML).toMatchInlineSnapshot(
-    `"<div><div><div data-v-app=\\"\\"><main><aside id=\\"group-1\\">A<div>Next to A</div></aside><section id=\\"group-2\\"><span>B</span></section><!--teleport start--><!--teleport end--></main></div></div></div>"`
+    `"<div><div><div data-v-app=\\"\\"><main><aside id=\\"group-1\\">A<div data-headlessui-portal=\\"\\">Next to A</div></aside><section id=\\"group-2\\"><span>B</span></section><!--teleport start--><!--teleport end--></main></div></div></div>"`
   )
 })

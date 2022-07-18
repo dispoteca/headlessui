@@ -1,13 +1,5 @@
-import {
-  defineComponent,
-  nextTick,
-  ref,
-  watch,
-  h,
-  reactive,
-  ComponentOptionsWithoutProps,
-} from 'vue'
-import { render } from '../../test-utils/vue-testing-library'
+import { defineComponent, nextTick, ref, watch, h, reactive } from 'vue'
+import { createRenderTemplate, render } from '../../test-utils/vue-testing-library'
 import { Listbox, ListboxLabel, ListboxButton, ListboxOptions, ListboxOption } from './listbox'
 import { suppressConsoleLogs } from '../../test-utils/suppress-console-logs'
 import {
@@ -66,21 +58,13 @@ function nextFrame() {
   })
 }
 
-function renderTemplate(input: string | ComponentOptionsWithoutProps) {
-  let defaultComponents = { Listbox, ListboxLabel, ListboxButton, ListboxOptions, ListboxOption }
-
-  if (typeof input === 'string') {
-    return render(defineComponent({ template: input, components: defaultComponents }))
-  }
-
-  return render(
-    defineComponent(
-      Object.assign({}, input, {
-        components: { ...defaultComponents, ...input.components },
-      }) as Parameters<typeof defineComponent>[0]
-    )
-  )
-}
+const renderTemplate = createRenderTemplate({
+  Listbox,
+  ListboxLabel,
+  ListboxButton,
+  ListboxOptions,
+  ListboxOption,
+})
 
 describe('safeguards', () => {
   it.each([

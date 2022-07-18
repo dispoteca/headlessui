@@ -415,11 +415,11 @@ let ComboboxRoot = forwardRefWithAs(function Combobox<
   }, [data])
 
   // Handle outside click
-  useOutsideClick([data.buttonRef, data.inputRef, data.optionsRef], () => {
-    if (data.comboboxState !== ComboboxState.Open) return
-
-    dispatch({ type: ActionTypes.CloseCombobox })
-  })
+  useOutsideClick(
+    [data.buttonRef, data.inputRef, data.optionsRef],
+    () => dispatch({ type: ActionTypes.CloseCombobox }),
+    data.comboboxState === ComboboxState.Open
+  )
 
   let slot = useMemo<ComboboxRenderPropArg<TType>>(
     () => ({
@@ -621,7 +621,6 @@ let Input = forwardRefWithAs(function Input<
 
       case Keys.Backspace:
       case Keys.Delete:
-        if (data.comboboxState !== ComboboxState.Open) return
         if (data.mode !== ValueMode.Single) return
         if (!data.nullable) return
 
@@ -1064,7 +1063,7 @@ let Option = forwardRefWithAs(function Option<
     select()
     if (data.mode === ValueMode.Single) {
       actions.closeCombobox()
-      disposables().nextFrame(() => data.inputRef.current?.focus({ preventScroll: true }))
+      data.inputRef.current?.focus({ preventScroll: true })
     }
   })
 

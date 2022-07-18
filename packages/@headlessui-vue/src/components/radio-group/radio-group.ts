@@ -85,7 +85,8 @@ export let RadioGroup = defineComponent({
 
     let value = computed(() => props.modelValue)
 
-    let api = {
+    // TODO: Fix type
+    let api: any = {
       options,
       value,
       disabled: computed(() => props.disabled),
@@ -124,7 +125,6 @@ export let RadioGroup = defineComponent({
       },
     }
 
-    // @ts-expect-error ...
     provide(RadioGroupContext, api)
 
     useTreeWalker({
@@ -202,7 +202,7 @@ export let RadioGroup = defineComponent({
     let id = `headlessui-radiogroup-${useId()}`
 
     return () => {
-      let { modelValue, disabled, name, ...incomingProps } = props
+      let { modelValue, disabled, name, ...theirProps } = props
 
       let ourProps = {
         ref: radioGroupRef,
@@ -232,7 +232,8 @@ export let RadioGroup = defineComponent({
             )
           : []),
         render({
-          props: { ...attrs, ...incomingProps, ...ourProps },
+          ourProps,
+          theirProps: { ...attrs, ...theirProps },
           slot: {},
           attrs,
           slots,
@@ -298,7 +299,7 @@ export let RadioGroupOption = defineComponent({
     }
 
     return () => {
-      let incomingProps = omit(props, ['value', 'disabled'])
+      let theirProps = omit(props, ['value', 'disabled'])
 
       let slot = {
         checked: checked.value,
@@ -321,7 +322,8 @@ export let RadioGroupOption = defineComponent({
       }
 
       return render({
-        props: { ...incomingProps, ...ourProps },
+        ourProps,
+        theirProps,
         slot,
         attrs,
         slots,

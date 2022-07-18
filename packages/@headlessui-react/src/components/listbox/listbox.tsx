@@ -441,16 +441,18 @@ let ListboxRoot = forwardRefWithAs(function Listbox<
   )
 
   // Handle outside click
-  useOutsideClick([buttonRef, optionsRef], (event, target) => {
-    if (listboxState !== ListboxStates.Open) return
+  useOutsideClick(
+    [buttonRef, optionsRef],
+    (event, target) => {
+      dispatch({ type: ListboxActionTypes.CloseListbox })
 
-    dispatch({ type: ListboxActionTypes.CloseListbox })
-
-    if (!isFocusableElement(target, FocusableMode.Loose)) {
-      event.preventDefault()
-      propsRef.current.onClose(reducerBag[0], dispatch)
-    }
-  })
+      if (!isFocusableElement(target, FocusableMode.Loose)) {
+        event.preventDefault()
+        propsRef.current.onClose(reducerBag[0], dispatch)
+      }
+    },
+    listboxState === ListboxStates.Open
+  )
 
   let slot = useMemo<ListboxRenderPropArg>(
     () => ({ open: listboxState === ListboxStates.Open, disabled }),

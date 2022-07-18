@@ -289,16 +289,18 @@ export let Listbox = defineComponent({
     }
 
     // Handle outside click
-    useOutsideClick([buttonRef, optionsRef], (event, target) => {
-      if (listboxState.value !== ListboxStates.Open) return
+    useOutsideClick(
+      [buttonRef, optionsRef],
+      (event, target) => {
+        api.closeListbox()
 
-      api.closeListbox()
-
-      if (!isFocusableElement(target, FocusableMode.Loose)) {
-        event.preventDefault()
-        dom(buttonRef)?.focus()
-      }
-    })
+        if (!isFocusableElement(target, FocusableMode.Loose)) {
+          event.preventDefault()
+          dom(buttonRef)?.focus()
+        }
+      },
+      computed(() => listboxState.value === ListboxStates.Open)
+    )
 
     // @ts-expect-error Types of property 'dataRef' are incompatible.
     provide(ListboxContext, api)
@@ -312,7 +314,7 @@ export let Listbox = defineComponent({
     )
 
     return () => {
-      let { name, modelValue, disabled, ...incomingProps } = props
+      let { name, modelValue, disabled, ...theirProps } = props
 
       let slot = { open: listboxState.value === ListboxStates.Open, disabled }
 
@@ -335,9 +337,10 @@ export let Listbox = defineComponent({
             )
           : []),
         render({
-          props: {
+          ourProps: {},
+          theirProps: {
             ...attrs,
-            ...omit(incomingProps, ['onUpdate:modelValue', 'horizontal', 'multiple', 'by']),
+            ...omit(theirProps, ['onUpdate:modelValue', 'horizontal', 'multiple', 'by']),
           },
           slot,
           slots,
@@ -370,7 +373,8 @@ export let ListboxLabel = defineComponent({
       let ourProps = { id, ref: api.labelRef, onClick: handleClick }
 
       return render({
-        props: { ...props, ...ourProps },
+        ourProps,
+        theirProps: props,
         slot,
         attrs,
         slots,
@@ -469,7 +473,8 @@ export let ListboxButton = defineComponent({
       }
 
       return render({
-        props: { ...props, ...ourProps },
+        ourProps,
+        theirProps: props,
         slot,
         attrs,
         slots,
@@ -593,10 +598,11 @@ export let ListboxOptions = defineComponent({
         tabIndex: 0,
         ref: api.optionsRef,
       }
-      let incomingProps = props
+      let theirProps = props
 
       return render({
-        props: { ...incomingProps, ...ourProps },
+        ourProps,
+        theirProps,
         slot,
         attrs,
         slots,
@@ -742,7 +748,8 @@ export let ListboxOption = defineComponent({
       }
 
       return render({
-        props: { ...omit(props, ['value', 'disabled']), ...ourProps },
+        ourProps,
+        theirProps: omit(props, ['value', 'disabled']),
         slot,
         attrs,
         slots,
