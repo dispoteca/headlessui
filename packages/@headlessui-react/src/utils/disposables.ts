@@ -1,3 +1,5 @@
+import { microTask } from './micro-task'
+
 export function disposables() {
   let disposables: Function[] = []
   let queue: Function[] = []
@@ -8,7 +10,7 @@ export function disposables() {
     },
 
     addEventListener<TEventName extends keyof WindowEventMap>(
-      element: HTMLElement,
+      element: HTMLElement | Document,
       name: TEventName,
       listener: (event: WindowEventMap[TEventName]) => any,
       options?: boolean | AddEventListenerOptions
@@ -31,6 +33,18 @@ export function disposables() {
     setTimeout(...args: Parameters<typeof setTimeout>) {
       let timer = setTimeout(...args)
       return api.add(() => clearTimeout(timer))
+    },
+
+    microTask(...args: Parameters<typeof microTask>) {
+      let task = { current: true }
+      microTask(() => {
+        if (task.current) {
+          args[0]()
+        }
+      })
+      return api.add(() => {
+        task.current = false
+      })
     },
 
     add(cb: () => void) {

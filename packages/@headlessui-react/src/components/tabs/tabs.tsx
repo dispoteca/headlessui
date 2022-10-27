@@ -5,7 +5,6 @@ import React, {
   useMemo,
   useReducer,
   useRef,
-  useEffect,
 
   // Types
   ElementType,
@@ -20,13 +19,16 @@ import { render, Features, PropsForFeatures, forwardRefWithAs } from '../../util
 import { useId } from '../../hooks/use-id'
 import { match } from '../../utils/match'
 import { Keys } from '../../components/keyboard'
-import { focusIn, Focus, sortByDomNode } from '../../utils/focus-management'
+import { focusIn, Focus, sortByDomNode, FocusResult } from '../../utils/focus-management'
 import { useIsoMorphicEffect } from '../../hooks/use-iso-morphic-effect'
 import { useSyncRefs } from '../../hooks/use-sync-refs'
 import { useResolveButtonType } from '../../hooks/use-resolve-button-type'
 import { useLatestValue } from '../../hooks/use-latest-value'
 import { FocusSentinel } from '../../internal/focus-sentinel'
 import { useEvent } from '../../hooks/use-event'
+import { microTask } from '../../utils/micro-task'
+import { Hidden } from '../../internal/hidden'
+import { getOwnerDocument } from '../../utils/owner'
 
 interface StateDefinition {
   selectedIndex: number
@@ -45,8 +47,6 @@ enum ActionTypes {
 
   RegisterPanel,
   UnregisterPanel,
-
-  ForceRerender,
 }
 
 type Actions =
@@ -56,7 +56,6 @@ type Actions =
   | { type: ActionTypes.UnregisterTab; tab: MutableRefObject<HTMLElement | null> }
   | { type: ActionTypes.RegisterPanel; panel: MutableRefObject<HTMLElement | null> }
   | { type: ActionTypes.UnregisterPanel; panel: MutableRefObject<HTMLElement | null> }
-  | { type: ActionTypes.ForceRerender }
 
 let reducers: {
   [P in ActionTypes]: (
@@ -95,26 +94,26 @@ let reducers: {
   },
   [ActionTypes.RegisterTab](state, action) {
     if (state.tabs.includes(action.tab)) return state
-    return { ...state, tabs: sortByDomNode([...state.tabs, action.tab], (tab) => tab.current) }
+    let activeTab = state.tabs[state.selectedIndex]
+
+    let adjustedTabs = sortByDomNode([...state.tabs, action.tab], (tab) => tab.current)
+    let selectedIndex = adjustedTabs.indexOf(activeTab) ?? state.selectedIndex
+    if (selectedIndex === -1) selectedIndex = state.selectedIndex
+
+    return { ...state, tabs: adjustedTabs, selectedIndex }
   },
   [ActionTypes.UnregisterTab](state, action) {
-    return {
-      ...state,
-      tabs: sortByDomNode(
-        state.tabs.filter((tab) => tab !== action.tab),
-        (tab) => tab.current
-      ),
-    }
+    return { ...state, tabs: state.tabs.filter((tab) => tab !== action.tab) }
   },
   [ActionTypes.RegisterPanel](state, action) {
     if (state.panels.includes(action.panel)) return state
-    return { ...state, panels: [...state.panels, action.panel] }
+    return {
+      ...state,
+      panels: sortByDomNode([...state.panels, action.panel], (panel) => panel.current),
+    }
   },
   [ActionTypes.UnregisterPanel](state, action) {
     return { ...state, panels: state.panels.filter((panel) => panel !== action.panel) }
-  },
-  [ActionTypes.ForceRerender](state) {
-    return { ...state }
   },
 }
 
@@ -157,7 +156,6 @@ let TabsActionsContext = createContext<{
   registerTab(tab: MutableRefObject<HTMLElement | null>): () => void
   registerPanel(panel: MutableRefObject<HTMLElement | null>): () => void
   change(index: number): void
-  forceRerender(): void
 } | null>(null)
 TabsActionsContext.displayName = 'TabsActionsContext'
 
@@ -206,6 +204,8 @@ let Tabs = forwardRefWithAs(function Tabs<TTag extends ElementType = typeof DEFA
   const orientation = vertical ? 'vertical' : 'horizontal'
   const activation = manual ? 'manual' : 'auto'
 
+  let isControlled = selectedIndex !== null
+
   let tabsRef = useSyncRefs(ref)
   let [state, dispatch] = useReducer(stateReducer, {
     selectedIndex: selectedIndex ?? defaultIndex,
@@ -221,11 +221,8 @@ let Tabs = forwardRefWithAs(function Tabs<TTag extends ElementType = typeof DEFA
     () => ({ orientation, activation, ...state }),
     [orientation, activation, state]
   )
-  useEffect(() => {
-    dispatch({ type: ActionTypes.SetManageFocus, manageFocus })
-  }, [manageFocus])
 
-  let lastChangedIndex = useLatestValue(state.selectedIndex)
+  let realSelectedIndex = useLatestValue(isControlled ? props.selectedIndex : state.selectedIndex)
   let tabsActions: _Actions = useMemo(
     () => ({
       registerTab(tab) {
@@ -236,19 +233,22 @@ let Tabs = forwardRefWithAs(function Tabs<TTag extends ElementType = typeof DEFA
         dispatch({ type: ActionTypes.RegisterPanel, panel })
         return () => dispatch({ type: ActionTypes.UnregisterPanel, panel })
       },
-      forceRerender() {
-        dispatch({ type: ActionTypes.ForceRerender })
-      },
       change(index: number) {
-        if (lastChangedIndex.current !== index) onChangeRef.current(index)
-        lastChangedIndex.current = index
+        if (realSelectedIndex.current !== index) {
+          onChangeRef.current(index)
+        }
 
-        dispatch({ type: ActionTypes.SetSelectedIndex, index })
+        if (!isControlled) {
+          dispatch({ type: ActionTypes.SetSelectedIndex, index })
+        }
       },
     }),
-    [dispatch]
+    [dispatch, isControlled]
   )
 
+  useIsoMorphicEffect(() => {
+    dispatch({ type: ActionTypes.SetManageFocus, manageFocus })
+  }, [manageFocus])
   useIsoMorphicEffect(() => {
     dispatch({ type: ActionTypes.SetSelectedIndex, index: selectedIndex ?? defaultIndex })
   }, [selectedIndex /* Deliberately skipping defaultIndex */])
@@ -336,13 +336,11 @@ let TabRoot = forwardRefWithAs(function Tab<TTag extends ElementType = typeof DE
 
   let { orientation, activation, selectedIndex, tabs, panels, manageFocus } = useData('Tab')
   let actions = useActions('Tab')
+  let data = useData('Tab')
   let SSRContext = useSSRTabsCounter('Tab')
 
   let internalTabRef = useRef<HTMLElement | null>(null)
-  let tabRef = useSyncRefs(internalTabRef, ref, (element) => {
-    if (!element) return
-    actions.forceRerender()
-  })
+  let tabRef = useSyncRefs(internalTabRef, ref)
 
   useIsoMorphicEffect(() => actions.registerTab(internalTabRef), [actions, internalTabRef])
 
@@ -352,6 +350,16 @@ let TabRoot = forwardRefWithAs(function Tab<TTag extends ElementType = typeof DE
   let myIndex = tabs.indexOf(internalTabRef)
   if (myIndex === -1) myIndex = mySSRIndex
   let selected = myIndex === selectedIndex
+
+  let activateUsing = useEvent((cb: () => FocusResult) => {
+    let result = cb()
+    if (result === FocusResult.Success && activation === 'auto') {
+      let newTab = getOwnerDocument(internalTabRef)?.activeElement
+      let idx = data.tabs.findIndex((tab) => tab.current === newTab)
+      if (idx !== -1) actions.change(idx)
+    }
+    return result
+  })
 
   let handleKeyDown = useEvent((event: ReactKeyboardEvent<HTMLElement>) => {
     let list = tabs.map((tab) => tab.current).filter(Boolean) as HTMLElement[]
@@ -374,45 +382,50 @@ let TabRoot = forwardRefWithAs(function Tab<TTag extends ElementType = typeof DE
         event.preventDefault()
         event.stopPropagation()
 
-        return focusIn(list, Focus.First)
+        return activateUsing(() => focusIn(list, Focus.First))
 
       case Keys.End:
       case Keys.PageDown:
         event.preventDefault()
         event.stopPropagation()
 
-        return focusIn(list, Focus.Last)
+        return activateUsing(() => focusIn(list, Focus.Last))
     }
 
-    if (
-      match(orientation, {
+    let result = activateUsing(() => {
+      return match(orientation, {
         vertical() {
           if (event.key === Keys.ArrowUp) return focusIn(list, Focus.Previous | Focus.WrapAround)
           if (event.key === Keys.ArrowDown) return focusIn(list, Focus.Next | Focus.WrapAround)
-          return
+          return FocusResult.Error
         },
         horizontal() {
           if (event.key === Keys.ArrowLeft) return focusIn(list, Focus.Previous | Focus.WrapAround)
           if (event.key === Keys.ArrowRight) return focusIn(list, Focus.Next | Focus.WrapAround)
-          return
+          return FocusResult.Error
         },
       })
-    ) {
+    })
+
+    if (result === FocusResult.Success) {
       return event.preventDefault()
     }
   })
 
-  let handleFocus = useEvent(() => {
-    if (manageFocus) {
-      internalTabRef.current?.focus()
-    }
-  })
-
+  let ready = useRef(false)
   let handleSelection = useEvent(() => {
+    if (ready.current) return
+    ready.current = true
+
     if (manageFocus) {
       internalTabRef.current?.focus()
     }
+
     actions.change(myIndex)
+
+    microTask(() => {
+      ready.current = false
+    })
   })
 
   // This is important because we want to only focus the tab when it gets focus
@@ -428,7 +441,6 @@ let TabRoot = forwardRefWithAs(function Tab<TTag extends ElementType = typeof DE
   let ourProps = {
     ref: tabRef,
     onKeyDown: handleKeyDown,
-    onFocus: manageFocus ? (activation === 'manual' ? handleFocus : handleSelection) : undefined,
     onMouseDown: handleMouseDown,
     onClick: handleSelection,
     id,
@@ -495,11 +507,8 @@ let Panel = forwardRefWithAs(function Panel<TTag extends ElementType = typeof DE
   let SSRContext = useSSRTabsCounter('Tab.Panel')
 
   let id = `headlessui-tabs-panel-${useId()}`
-  let internalPanelRef = useRef<HTMLElement>(null)
-  let panelRef = useSyncRefs(internalPanelRef, ref, (element) => {
-    if (!element) return
-    actions.forceRerender()
-  })
+  let internalPanelRef = useRef<HTMLElement | null>(null)
+  let panelRef = useSyncRefs(internalPanelRef, ref)
 
   useIsoMorphicEffect(() => actions.registerPanel(internalPanelRef), [actions, internalPanelRef])
 
@@ -520,6 +529,10 @@ let Panel = forwardRefWithAs(function Panel<TTag extends ElementType = typeof DE
     role: 'tabpanel',
     'aria-labelledby': tabs[myIndex]?.current?.id,
     tabIndex: manageFocus ? (selected ? 0 : -1) : undefined,
+  }
+
+  if (!selected && (props.unmount ?? true) && !(props.static ?? false)) {
+    return <Hidden as="span" {...ourProps} />
   }
 
   return render({

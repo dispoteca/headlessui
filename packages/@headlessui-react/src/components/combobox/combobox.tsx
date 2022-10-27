@@ -15,7 +15,7 @@ import React, {
   MutableRefObject,
   Ref,
 } from 'react'
-import { Props } from '../../types'
+import { ByComparator, EnsureArray, Expand, Props } from '../../types'
 
 import { useComputed } from '../../hooks/use-computed'
 import { useDisposables } from '../../hooks/use-disposables'
@@ -40,6 +40,8 @@ import { Hidden, Features as HiddenFeatures } from '../../internal/hidden'
 import { useOpenClosed, State, OpenClosedProvider } from '../../internal/open-closed'
 
 import { Keys } from '../keyboard'
+import { useControllable } from '../../hooks/use-controllable'
+import { useWatch } from '../../hooks/use-watch'
 
 enum ComboboxState {
   Open,
@@ -65,6 +67,7 @@ type ComboboxOptionDataRef<T> = MutableRefObject<{
 
 interface StateDefinition<T> {
   dataRef: MutableRefObject<_Data>
+  labelId: string | null
 
   comboboxState: ComboboxState
 
@@ -81,6 +84,8 @@ enum ActionTypes {
 
   RegisterOption,
   UnregisterOption,
+
+  RegisterLabel,
 }
 
 function adjustOrderedState<T>(
@@ -122,6 +127,7 @@ type Actions<T> =
       trigger?: ActivationTrigger
     }
   | { type: ActionTypes.RegisterOption; id: string; dataRef: ComboboxOptionDataRef<T> }
+  | { type: ActionTypes.RegisterLabel; id: string | null }
   | { type: ActionTypes.UnregisterOption; id: string }
 
 let reducers: {
@@ -225,12 +231,19 @@ let reducers: {
       activationTrigger: ActivationTrigger.Other,
     }
   },
+  [ActionTypes.RegisterLabel]: (state, action) => {
+    return {
+      ...state,
+      labelId: action.id,
+    }
+  },
 }
 
 let ComboboxActionsContext = createContext<{
   openCombobox(): void
   closeCombobox(): void
   registerOption(id: string, dataRef: ComboboxOptionDataRef<unknown>): () => void
+  registerLabel(id: string): () => void
   goToOption(focus: Focus.Specific, id: string, trigger?: ActivationTrigger): void
   goToOption(focus: Focus, id?: string, trigger?: ActivationTrigger): void
   selectOption(id: string): void
@@ -261,9 +274,6 @@ let ComboboxDataContext = createContext<
       isSelected(value: unknown): boolean
       __demoMode: boolean
 
-      inputPropsRef: MutableRefObject<{
-        displayValue?(item: unknown): string
-      }>
       optionsPropsRef: MutableRefObject<{
         static: boolean
         hold: boolean
@@ -301,40 +311,101 @@ interface ComboboxRenderPropArg<T> {
   disabled: boolean
   activeIndex: number | null
   activeOption: T | null
+  value: T
 }
 
-let ComboboxRoot = forwardRefWithAs(function Combobox<
-  TTag extends ElementType = typeof DEFAULT_COMBOBOX_TAG,
-  TType = string,
-  TActualType = TType extends (infer U)[] ? U : TType
->(
-  props: Props<
-    TTag,
-    ComboboxRenderPropArg<TType>,
-    'value' | 'onChange' | 'disabled' | 'name' | 'nullable' | 'multiple'
-  > & {
-    value: TType
-    onChange(value: TType): void
-    by?: (keyof TType & string) | ((a: TType, z: TType) => boolean)
-    disabled?: boolean
-    __demoMode?: boolean
-    name?: string
-    nullable?: boolean
-    multiple?: boolean
-  },
+type O = 'value' | 'defaultValue' | 'nullable' | 'multiple' | 'onChange' | 'by'
+
+type ComboboxValueProps<
+  TValue,
+  TNullable extends boolean | undefined,
+  TMultiple extends boolean | undefined,
+  TTag extends ElementType
+> = Extract<
+  | ({
+      value?: EnsureArray<TValue>
+      defaultValue?: EnsureArray<TValue>
+      nullable: true // We ignore `nullable` in multiple mode
+      multiple: true
+      onChange?(value: EnsureArray<TValue>): void
+      by?: ByComparator<TValue>
+    } & Props<TTag, ComboboxRenderPropArg<EnsureArray<TValue>>, O>)
+  | ({
+      value?: TValue | null
+      defaultValue?: TValue | null
+      nullable: true
+      multiple?: false
+      onChange?(value: TValue | null): void
+      by?: ByComparator<TValue | null>
+    } & Expand<Props<TTag, ComboboxRenderPropArg<TValue | null>, O>>)
+  | ({
+      value?: EnsureArray<TValue>
+      defaultValue?: EnsureArray<TValue>
+      nullable?: false
+      multiple: true
+      onChange?(value: EnsureArray<TValue>): void
+      by?: ByComparator<TValue extends Array<infer U> ? U : TValue>
+    } & Expand<Props<TTag, ComboboxRenderPropArg<EnsureArray<TValue>>, O>>)
+  | ({
+      value?: TValue
+      nullable?: false
+      multiple?: false
+      defaultValue?: TValue
+      onChange?(value: TValue): void
+      by?: ByComparator<TValue>
+    } & Props<TTag, ComboboxRenderPropArg<TValue>, O>),
+  { nullable?: TNullable; multiple?: TMultiple }
+>
+
+type ComboboxProps<
+  TValue,
+  TNullable extends boolean | undefined,
+  TMultiple extends boolean | undefined,
+  TTag extends ElementType
+> = ComboboxValueProps<TValue, TNullable, TMultiple, TTag> & {
+  disabled?: boolean
+  __demoMode?: boolean
+  name?: string
+}
+
+function ComboboxFn<TValue, TTag extends ElementType = typeof DEFAULT_COMBOBOX_TAG>(
+  props: ComboboxProps<TValue, true, true, TTag>,
+  ref: Ref<TTag>
+): JSX.Element
+function ComboboxFn<TValue, TTag extends ElementType = typeof DEFAULT_COMBOBOX_TAG>(
+  props: ComboboxProps<TValue, true, false, TTag>,
+  ref: Ref<TTag>
+): JSX.Element
+function ComboboxFn<TValue, TTag extends ElementType = typeof DEFAULT_COMBOBOX_TAG>(
+  props: ComboboxProps<TValue, false, false, TTag>,
+  ref: Ref<TTag>
+): JSX.Element
+function ComboboxFn<TValue, TTag extends ElementType = typeof DEFAULT_COMBOBOX_TAG>(
+  props: ComboboxProps<TValue, false, true, TTag>,
+  ref: Ref<TTag>
+): JSX.Element
+
+function ComboboxFn<TValue, TTag extends ElementType = typeof DEFAULT_COMBOBOX_TAG>(
+  props: ComboboxProps<TValue, boolean | undefined, boolean | undefined, TTag>,
   ref: Ref<TTag>
 ) {
   let {
+    value: controlledValue,
+    defaultValue,
+    onChange: controlledOnChange,
     name,
-    value,
-    onChange: theirOnChange,
-    by = (a, z) => a === z,
+    by = (a: any, z: any) => a === z,
     disabled = false,
     __demoMode = false,
     nullable = false,
     multiple = false,
     ...theirProps
   } = props
+  let [value, theirOnChange] = useControllable<any>(
+    controlledValue,
+    controlledOnChange,
+    defaultValue
+  )
 
   let [state, dispatch] = useReducer(stateReducer, {
     dataRef: createRef(),
@@ -342,12 +413,12 @@ let ComboboxRoot = forwardRefWithAs(function Combobox<
     options: [],
     activeOptionIndex: null,
     activationTrigger: ActivationTrigger.Other,
-  } as StateDefinition<TType>)
+    labelId: null,
+  } as StateDefinition<TValue>)
 
   let defaultToFirstOption = useRef(false)
 
   let optionsPropsRef = useRef<_Data['optionsPropsRef']['current']>({ static: false, hold: false })
-  let inputPropsRef = useRef<_Data['inputPropsRef']['current']>({ displayValue: undefined })
 
   let labelRef = useRef<_Data['labelRef']['current']>(null)
   let inputRef = useRef<_Data['inputRef']['current']>(null)
@@ -356,19 +427,19 @@ let ComboboxRoot = forwardRefWithAs(function Combobox<
 
   let compare = useEvent(
     typeof by === 'string'
-      ? (a: TType, z: TType) => {
-          let property = by as unknown as keyof TType
-          return a[property] === z[property]
+      ? (a, z) => {
+          let property = by as unknown as keyof TValue
+          return a?.[property] === z?.[property]
         }
       : by
   )
 
-  let isSelected: (value: TType) => boolean = useCallback(
+  let isSelected: (value: unknown) => boolean = useCallback(
     (compareValue) =>
       match(data.mode, {
         [ValueMode.Multi]: () =>
-          (value as unknown as TType[]).some((option) => compare(option, compareValue)),
-        [ValueMode.Single]: () => compare(value, compareValue),
+          (value as EnsureArray<TValue>).some((option) => compare(option, compareValue)),
+        [ValueMode.Single]: () => compare(value as TValue, compareValue),
       }),
     [value]
   )
@@ -377,7 +448,6 @@ let ComboboxRoot = forwardRefWithAs(function Combobox<
     () => ({
       ...state,
       optionsPropsRef,
-      inputPropsRef,
       labelRef,
       inputRef,
       buttonRef,
@@ -421,7 +491,7 @@ let ComboboxRoot = forwardRefWithAs(function Combobox<
     data.comboboxState === ComboboxState.Open
   )
 
-  let slot = useMemo<ComboboxRenderPropArg<TType>>(
+  let slot = useMemo<ComboboxRenderPropArg<unknown>>(
     () => ({
       open: data.comboboxState === ComboboxState.Open,
       disabled,
@@ -429,37 +499,23 @@ let ComboboxRoot = forwardRefWithAs(function Combobox<
       activeOption:
         data.activeOptionIndex === null
           ? null
-          : (data.options[data.activeOptionIndex].dataRef.current.value as TType),
+          : (data.options[data.activeOptionIndex].dataRef.current.value as TValue),
+      value,
     }),
-    [data, disabled]
+    [data, disabled, value]
   )
-
-  let syncInputValue = useCallback(() => {
-    if (!data.inputRef.current) return
-    let displayValue = inputPropsRef.current.displayValue
-
-    if (typeof displayValue === 'function') {
-      data.inputRef.current.value = displayValue(value) ?? ''
-    } else if (typeof value === 'string') {
-      data.inputRef.current.value = value
-    } else {
-      data.inputRef.current.value = ''
-    }
-  }, [value, data.inputRef, inputPropsRef])
 
   let selectOption = useEvent((id: string) => {
     let option = data.options.find((item) => item.id === id)
     if (!option) return
 
     onChange(option.dataRef.current.value)
-    syncInputValue()
   })
 
   let selectActiveOption = useEvent(() => {
     if (data.activeOptionIndex !== null) {
       let { dataRef, id } = data.options[data.activeOptionIndex]
       onChange(dataRef.current.value)
-      syncInputValue()
 
       // It could happen that the `activeOptionIndex` stored in state is actually null,
       // but we are getting the fallback active option back instead.
@@ -492,22 +548,27 @@ let ComboboxRoot = forwardRefWithAs(function Combobox<
     return () => dispatch({ type: ActionTypes.UnregisterOption, id })
   })
 
+  let registerLabel = useEvent((id) => {
+    dispatch({ type: ActionTypes.RegisterLabel, id })
+    return () => dispatch({ type: ActionTypes.RegisterLabel, id: null })
+  })
+
   let onChange = useEvent((value: unknown) => {
     return match(data.mode, {
       [ValueMode.Single]() {
-        return theirOnChange(value as TType)
+        return theirOnChange?.(value as TValue)
       },
       [ValueMode.Multi]() {
-        let copy = (data.value as TActualType[]).slice()
+        let copy = (data.value as TValue[]).slice()
 
-        let idx = copy.indexOf(value as TActualType)
+        let idx = copy.findIndex((item) => compare(item, value as TValue))
         if (idx === -1) {
-          copy.push(value as TActualType)
+          copy.push(value as TValue)
         } else {
           copy.splice(idx, 1)
         }
 
-        return theirOnChange(copy as unknown as TType)
+        return theirOnChange?.(copy as unknown as TValue[])
       },
     })
   })
@@ -516,6 +577,7 @@ let ComboboxRoot = forwardRefWithAs(function Combobox<
     () => ({
       onChange,
       registerOption,
+      registerLabel,
       goToOption,
       closeCombobox,
       openCombobox,
@@ -525,13 +587,6 @@ let ComboboxRoot = forwardRefWithAs(function Combobox<
     []
   )
 
-  useIsoMorphicEffect(() => {
-    if (data.comboboxState !== ComboboxState.Closed) return
-    syncInputValue()
-  }, [syncInputValue, data.comboboxState])
-
-  // Ensure that we update the inputRef if the value changes
-  useIsoMorphicEffect(syncInputValue, [syncInputValue])
   let ourProps = ref === null ? {} : { ref }
 
   return (
@@ -570,7 +625,8 @@ let ComboboxRoot = forwardRefWithAs(function Combobox<
       </ComboboxDataContext.Provider>
     </ComboboxActionsContext.Provider>
   )
-})
+}
+let ComboboxRoot = forwardRefWithAs(ComboboxFn)
 
 // ---
 
@@ -606,14 +662,33 @@ let Input = forwardRefWithAs(function Input<
   let actions = useActions('Combobox.Input')
 
   let inputRef = useSyncRefs(data.inputRef, ref)
-  let inputPropsRef = data.inputPropsRef
 
   let id = `headlessui-combobox-input-${useId()}`
   let d = useDisposables()
 
-  useIsoMorphicEffect(() => {
-    inputPropsRef.current.displayValue = displayValue
-  }, [displayValue, inputPropsRef])
+  let currentValue = useMemo(() => {
+    if (typeof displayValue === 'function') {
+      return displayValue(data.value as unknown as TType) ?? ''
+    } else if (typeof data.value === 'string') {
+      return data.value
+    } else {
+      return ''
+    }
+
+    // displayValue is intentionally left out
+  }, [data.value])
+
+  useWatch(
+    ([currentValue, state], [oldCurrentValue, oldState]) => {
+      if (!data.inputRef.current) return
+      if (oldState === ComboboxState.Open && state === ComboboxState.Closed) {
+        data.inputRef.current.value = currentValue
+      } else if (currentValue !== oldCurrentValue) {
+        data.inputRef.current.value = currentValue
+      }
+    },
+    [currentValue, data.comboboxState]
+  )
 
   let handleKeyDown = useEvent((event: ReactKeyboardEvent<HTMLInputElement>) => {
     switch (event.key) {
@@ -638,6 +713,7 @@ let Input = forwardRefWithAs(function Input<
 
       case Keys.Enter:
         if (data.comboboxState !== ComboboxState.Open) return
+        if (event.nativeEvent.isComposing) return
 
         event.preventDefault()
         event.stopPropagation()
@@ -704,7 +780,7 @@ let Input = forwardRefWithAs(function Input<
 
       case Keys.Tab:
         if (data.comboboxState !== ComboboxState.Open) return
-        actions.selectActiveOption()
+        if (data.mode === ValueMode.Single) actions.selectActiveOption()
         actions.closeCombobox()
         break
     }
@@ -718,9 +794,9 @@ let Input = forwardRefWithAs(function Input<
   // TODO: Verify this. The spec says that, for the input/combobox, the label is the labelling element when present
   // Otherwise it's the ID of the non-label element
   let labelledby = useComputed(() => {
-    if (!data.labelRef.current) return undefined
-    return [data.labelRef.current.id].join(' ')
-  }, [data.labelRef.current])
+    if (!data.labelId) return undefined
+    return [data.labelId].join(' ')
+  }, [data.labelId])
 
   let slot = useMemo<InputRenderPropArg>(
     () => ({ open: data.comboboxState === ComboboxState.Open, disabled: data.disabled }),
@@ -758,6 +834,7 @@ let DEFAULT_BUTTON_TAG = 'button' as const
 interface ButtonRenderPropArg {
   open: boolean
   disabled: boolean
+  value: any
 }
 type ButtonPropsWeControl =
   | 'id'
@@ -834,12 +911,16 @@ let Button = forwardRefWithAs(function Button<TTag extends ElementType = typeof 
   })
 
   let labelledby = useComputed(() => {
-    if (!data.labelRef.current) return undefined
-    return [data.labelRef.current.id, id].join(' ')
-  }, [data.labelRef.current, id])
+    if (!data.labelId) return undefined
+    return [data.labelId, id].join(' ')
+  }, [data.labelId, id])
 
   let slot = useMemo<ButtonRenderPropArg>(
-    () => ({ open: data.comboboxState === ComboboxState.Open, disabled: data.disabled }),
+    () => ({
+      open: data.comboboxState === ComboboxState.Open,
+      disabled: data.disabled,
+      value: data.value,
+    }),
     [data]
   )
   let theirProps = props
@@ -881,7 +962,10 @@ let Label = forwardRefWithAs(function Label<TTag extends ElementType = typeof DE
 ) {
   let data = useData('Combobox.Label')
   let id = `headlessui-combobox-label-${useId()}`
+  let actions = useActions('Combobox.Label')
   let labelRef = useSyncRefs(data.labelRef, ref)
+
+  useIsoMorphicEffect(() => actions.registerLabel(id), [id])
 
   let handleClick = useEvent(() => data.inputRef.current?.focus({ preventScroll: true }))
 
@@ -965,8 +1049,8 @@ let Options = forwardRefWithAs(function Options<
   })
 
   let labelledby = useComputed(
-    () => data.labelRef.current?.id ?? data.buttonRef.current?.id,
-    [data.labelRef.current, data.buttonRef.current]
+    () => data.labelId ?? data.buttonRef.current?.id,
+    [data.labelId, data.buttonRef.current]
   )
 
   let slot = useMemo<OptionsRenderPropArg>(
@@ -1063,7 +1147,6 @@ let Option = forwardRefWithAs(function Option<
     select()
     if (data.mode === ValueMode.Single) {
       actions.closeCombobox()
-      data.inputRef.current?.focus({ preventScroll: true })
     }
   })
 
@@ -1099,7 +1182,7 @@ let Option = forwardRefWithAs(function Option<
     // According to the WAI-ARIA best practices, we should use aria-checked for
     // multi-select,but Voice-Over disagrees. So we use aria-checked instead for
     // both single and multi-select.
-    'aria-selected': selected === true ? true : undefined,
+    'aria-selected': selected,
     disabled: undefined, // Never forward the `disabled` prop
     onClick: handleClick,
     onFocus: handleFocus,

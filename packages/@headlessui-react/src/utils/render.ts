@@ -126,20 +126,20 @@ function _render<TTag extends ElementType, TSlot>(
   }
 
   let dataAttributes: Record<string, string> = {}
-  // if (slot) {
-  //   let exposeState = false
-  //   let states = []
-  //   for (let [k, v] of Object.entries(slot)) {
-  //     if (typeof v === 'boolean') {
-  //       exposeState = true
-  //     }
-  //     if (v === true) {
-  //       states.push(k)
-  //     }
-  //   }
-  //
-  //   if (exposeState) dataAttributes[`data-headlessui-state`] = states.join(' ')
-  // }
+  if (slot) {
+    let exposeState = false
+    let states = []
+    for (let [k, v] of Object.entries(slot)) {
+      if (typeof v === 'boolean') {
+        exposeState = true
+      }
+      if (v === true) {
+        states.push(k)
+      }
+    }
+
+    if (exposeState) dataAttributes[`data-headlessui-state`] = states.join(' ')
+  }
 
   if (Component === Fragment) {
     if (Object.keys(compact(rest)).length > 0) {
@@ -175,7 +175,8 @@ function _render<TTag extends ElementType, TSlot>(
           // Filter out undefined values so that they don't override the existing values
           mergeProps(resolvedChildren.props, compact(omit(rest, ['ref']))),
           dataAttributes,
-          refRelatedProps
+          refRelatedProps,
+          mergeRefs((resolvedChildren as any).ref, refRelatedProps.ref)
         )
       )
     }
@@ -191,6 +192,20 @@ function _render<TTag extends ElementType, TSlot>(
     ),
     resolvedChildren
   )
+}
+
+function mergeRefs(...refs: any[]) {
+  return {
+    ref: refs.every((ref) => ref == null)
+      ? undefined
+      : (value: any) => {
+          for (let ref of refs) {
+            if (ref == null) continue
+            if (typeof ref === 'function') ref(value)
+            else ref.current = value
+          }
+        },
+  }
 }
 
 function mergeProps(...listOfProps: Props<any, any>[]) {
@@ -232,11 +247,16 @@ function mergeProps(...listOfProps: Props<any, any>[]) {
   // Merge event handlers
   for (let eventName in eventHandlers) {
     Object.assign(target, {
-      [eventName](event: { defaultPrevented: boolean }, ...args: any[]) {
+      [eventName](event: { nativeEvent?: Event; defaultPrevented: boolean }, ...args: any[]) {
         let handlers = eventHandlers[eventName]
 
         for (let handler of handlers) {
-          if (event.defaultPrevented) return
+          if (
+            (event instanceof Event || event?.nativeEvent instanceof Event) &&
+            event.defaultPrevented
+          ) {
+            return
+          }
 
           handler(event, ...args)
         }

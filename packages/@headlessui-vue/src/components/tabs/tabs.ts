@@ -20,9 +20,12 @@ import { useId } from '../../hooks/use-id'
 import { Keys } from '../../keyboard'
 import { dom } from '../../utils/dom'
 import { match } from '../../utils/match'
-import { focusIn, Focus } from '../../utils/focus-management'
+import { focusIn, Focus, FocusResult } from '../../utils/focus-management'
 import { useResolveButtonType } from '../../hooks/use-resolve-button-type'
 import { FocusSentinel } from '../../internal/focus-sentinel'
+import { microTask } from '../../utils/micro-task'
+import { Hidden } from '../../internal/hidden'
+import { getOwnerDocument } from '../../utils/owner'
 
 type StateDefinition = {
   // State
@@ -75,6 +78,11 @@ export let TabGroup = defineComponent({
     let tabs = ref<StateDefinition['tabs']['value']>([])
     let panels = ref<StateDefinition['panels']['value']>([])
 
+    let isControlled = computed(() => props.selectedIndex !== null)
+    let realSelectedIndex = computed(() =>
+      isControlled.value ? props.selectedIndex : selectedIndex.value
+    )
+
     let api = {
       selectedIndex,
       orientation: computed(() => (props.vertical ? 'vertical' : 'horizontal')),
@@ -82,9 +90,13 @@ export let TabGroup = defineComponent({
       tabs,
       panels,
       setSelectedIndex(index: number) {
-        if (selectedIndex.value === index) return
-        selectedIndex.value = index
-        emit('change', index)
+        if (realSelectedIndex.value !== index) {
+          emit('change', index)
+        }
+
+        if (!isControlled.value) {
+          selectedIndex.value = index
+        }
       },
       registerTab(tab: typeof tabs['value'][number]) {
         if (!tabs.value.includes(tab)) tabs.value.push(tab)
@@ -222,6 +234,16 @@ export let Tab = defineComponent({
     let myIndex = computed(() => api.tabs.value.indexOf(internalTabRef))
     let selected = computed(() => myIndex.value === api.selectedIndex.value)
 
+    function activateUsing(cb: () => FocusResult) {
+      let result = cb()
+      if (result === FocusResult.Success && api.activation.value === 'auto') {
+        let newTab = getOwnerDocument(internalTabRef)?.activeElement
+        let idx = api.tabs.value.findIndex((tab) => dom(tab) === newTab)
+        if (idx !== -1) api.setSelectedIndex(idx)
+      }
+      return result
+    }
+
     function handleKeyDown(event: KeyboardEvent) {
       let list = api.tabs.value.map((tab) => dom(tab)).filter(Boolean) as HTMLElement[]
 
@@ -239,44 +261,50 @@ export let Tab = defineComponent({
           event.preventDefault()
           event.stopPropagation()
 
-          return focusIn(list, Focus.First)
+          return activateUsing(() => focusIn(list, Focus.First))
 
         case Keys.End:
         case Keys.PageDown:
           event.preventDefault()
           event.stopPropagation()
 
-          return focusIn(list, Focus.Last)
+          return activateUsing(() => focusIn(list, Focus.Last))
       }
 
-      if (
+      let result = activateUsing(() =>
         match(api.orientation.value, {
           vertical() {
             if (event.key === Keys.ArrowUp) return focusIn(list, Focus.Previous | Focus.WrapAround)
             if (event.key === Keys.ArrowDown) return focusIn(list, Focus.Next | Focus.WrapAround)
-            return
+            return FocusResult.Error
           },
           horizontal() {
             if (event.key === Keys.ArrowLeft)
               return focusIn(list, Focus.Previous | Focus.WrapAround)
             if (event.key === Keys.ArrowRight) return focusIn(list, Focus.Next | Focus.WrapAround)
-            return
+            return FocusResult.Error
           },
         })
-      ) {
+      )
+
+      if (result === FocusResult.Success) {
         return event.preventDefault()
       }
     }
 
-    function handleFocus() {
-      dom(internalTabRef)?.focus()
-    }
-
+    let ready = ref(false)
     function handleSelection() {
+      if (ready.value) return
+      ready.value = true
+
       if (props.disabled) return
 
       dom(internalTabRef)?.focus()
       api.setSelectedIndex(myIndex.value)
+
+      microTask(() => {
+        ready.value = false
+      })
     }
 
     // This is important because we want to only focus the tab when it gets focus
@@ -296,13 +324,12 @@ export let Tab = defineComponent({
       let ourProps = {
         ref: internalTabRef,
         onKeydown: handleKeyDown,
-        onFocus: api.activation.value === 'manual' ? handleFocus : handleSelection,
         onMousedown: handleMouseDown,
         onClick: handleSelection,
         id,
         role: 'tab',
         type: type.value,
-        'aria-controls': api.panels.value[myIndex.value]?.value?.id,
+        'aria-controls': dom(api.panels.value[myIndex.value])?.id,
         'aria-selected': selected.value,
         tabIndex: selected.value ? 0 : -1,
         disabled: props.disabled ? true : undefined,
@@ -372,8 +399,12 @@ export let TabPanel = defineComponent({
         ref: internalPanelRef,
         id,
         role: 'tabpanel',
-        'aria-labelledby': api.tabs.value[myIndex.value]?.value?.id,
+        'aria-labelledby': dom(api.tabs.value[myIndex.value])?.id,
         tabIndex: selected.value ? 0 : -1,
+      }
+
+      if (!selected.value && props.unmount && !props.static) {
+        return h(Hidden, { as: 'span', ...ourProps })
       }
 
       return render({

@@ -132,6 +132,48 @@ describe('Rendering', () => {
     assertTabs({ active: 2 })
   })
 
+  it(
+    'should guarantee the order when injecting new tabs dynamically',
+    suppressConsoleLogs(async () => {
+      renderTemplate({
+        template: html`
+          <TabGroup>
+            <TabList>
+              <Tab v-for="(t, i) in tabs" :key="t">Tab {{ i + 1 }}</Tab>
+              <Tab>Insert new</Tab>
+            </TabList>
+            <TabPanels>
+              <TabPanel v-for="t in tabs" :key="t">{{ t }}</TabPanel>
+              <TabPanel>
+                <button @click="add">Insert</button>
+              </TabPanel>
+            </TabPanels>
+          </TabGroup>
+        `,
+        setup() {
+          let tabs = ref<string[]>([])
+
+          return {
+            tabs,
+            add() {
+              tabs.value.push(`Panel ${tabs.value.length + 1}`)
+            },
+          }
+        },
+      })
+
+      await new Promise<void>(nextTick)
+
+      assertTabs({ active: 0, tabContents: 'Insert new', panelContents: 'Insert' })
+
+      // Add some new tabs
+      await click(getByText('Insert'))
+
+      // We should still be on the tab we were on
+      assertTabs({ active: 1, tabContents: 'Insert new', panelContents: 'Insert' })
+    })
+  )
+
   describe('`renderProps`', () => {
     it('should expose the `selectedIndex` on the `Tabs` component', async () => {
       renderTemplate(
@@ -515,6 +557,67 @@ describe('Rendering', () => {
 })
 
 describe('`selectedIndex`', () => {
+  it(
+    'should not change the tab in a controlled component if you do not respond to the @change',
+    suppressConsoleLogs(async () => {
+      let handleChange = jest.fn()
+
+      renderTemplate({
+        template: html`
+          <TabGroup @change="handleChange" :selectedIndex="selectedIndex">
+            <TabList>
+              <Tab>Tab 1</Tab>
+              <Tab>Tab 2</Tab>
+              <Tab>Tab 3</Tab>
+            </TabList>
+
+            <TabPanels>
+              <TabPanel>Content 1</TabPanel>
+              <TabPanel>Content 2</TabPanel>
+              <TabPanel>Content 3</TabPanel>
+            </TabPanels>
+          </TabGroup>
+          <button>after</button>
+          <button @click="next">setSelectedIndex</button>
+        `,
+        setup() {
+          let selectedIndex = ref(0)
+
+          return {
+            selectedIndex,
+            handleChange(value: number) {
+              handleChange(value)
+            },
+            next() {
+              selectedIndex.value += 1
+            },
+          }
+        },
+      })
+
+      await new Promise<void>(nextTick)
+
+      assertActiveElement(document.body)
+
+      // test controlled behaviour
+      await click(getByText('setSelectedIndex'))
+      assertTabs({ active: 1 })
+      await click(getByText('setSelectedIndex'))
+      assertTabs({ active: 2 })
+
+      // test uncontrolled behaviour again
+      await click(getByText('Tab 1'))
+      assertTabs({ active: 2 }) // Should still be Tab 3 because `selectedIndex` didn't update
+      await click(getByText('Tab 2'))
+      assertTabs({ active: 2 }) // Should still be Tab 3 because `selectedIndex` didn't update
+      await click(getByText('Tab 3'))
+      assertTabs({ active: 2 }) // Should still be Tab 3 because `selectedIndex` didn't update
+      await click(getByText('Tab 1'))
+      expect(handleChange).toHaveBeenCalledTimes(3) // We did see the '@change' calls, but only 3 because clicking Tab 3 is already the active one which means that this doesn't trigger the @change
+      assertTabs({ active: 2 }) // Should still be Tab 3 because `selectedIndex` didn't update
+    })
+  )
+
   it('should be possible to change active tab controlled and uncontrolled', async () => {
     let handleChange = jest.fn()
 

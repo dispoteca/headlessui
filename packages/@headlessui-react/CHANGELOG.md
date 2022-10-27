@@ -7,10 +7,69 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Nothing yet!
+
+## [1.7.3] - 2022-09-30
+
+### Fixed
+
+- Improve `Portal` detection for `Popover` components ([#1842](https://github.com/tailwindlabs/headlessui/pull/1842))
+- Fix `useOutsideClick` swallowing events inside ShadowDOM ([#1876](https://github.com/tailwindlabs/headlessui/pull/1876))
+- Fix `Tab` incorrectly activating on `focus` event ([#1887](https://github.com/tailwindlabs/headlessui/pull/1887))
+
+## [1.7.2] - 2022-09-15
+
+### Fixed
+
+- Prevent option selection in `Combobox.Input` while composing ([#1850](https://github.com/tailwindlabs/headlessui/issues/1850))
+- Ensure we handle the `static` prop in `Tab.Panel` components correctly ([#1856](https://github.com/tailwindlabs/headlessui/pull/1856))
+
+## [1.7.1] - 2022-09-12
+
+### Fixed
+
+- Improve iOS scroll locking ([#1830](https://github.com/tailwindlabs/headlessui/pull/1830))
+- Add `<fieldset disabled>` check to radio group options in React ([#1835](https://github.com/tailwindlabs/headlessui/pull/1835))
+- Ensure `Tab` order stays consistent, and the currently active `Tab` stays active ([#1837](https://github.com/tailwindlabs/headlessui/pull/1837))
+- Ensure `Combobox.Label` is properly linked when rendered after `Combobox.Button` and `Combobox.Input` components ([#1838](https://github.com/tailwindlabs/headlessui/pull/1838))
+- Remove `forceRerender` from `Tab` component ([#1846](https://github.com/tailwindlabs/headlessui/pull/1846))
+
+## [1.7.0] - 2022-09-06
+
 ### Added
 
-- Add `by` prop for `Listbox`, `Combobox` and `RadioGroup` ([#1482](https://github.com/tailwindlabs/headlessui/pull/1482))
+- Add `by` prop for `Listbox`, `Combobox` and `RadioGroup` ([#1482](https://github.com/tailwindlabs/headlessui/pull/1482), [#1717](https://github.com/tailwindlabs/headlessui/pull/1717), [#1814](https://github.com/tailwindlabs/headlessui/pull/1814), [#1815](https://github.com/tailwindlabs/headlessui/pull/1815))
+- Make form components uncontrollable ([#1683](https://github.com/tailwindlabs/headlessui/pull/1683))
 - Add `@headlessui/tailwindcss` plugin ([#1487](https://github.com/tailwindlabs/headlessui/pull/1487))
+
+### Fixed
+
+- Fixed SSR support on Deno ([#1671](https://github.com/tailwindlabs/headlessui/pull/1671))
+- Don’t close dialog when opened during mouse up event ([#1667](https://github.com/tailwindlabs/headlessui/pull/1667))
+- Don’t close dialog when drag ends outside dialog ([#1667](https://github.com/tailwindlabs/headlessui/pull/1667))
+- Fix outside clicks to close dialog when nested, unopened dialogs are present ([#1667](https://github.com/tailwindlabs/headlessui/pull/1667))
+- Close `Menu` component when using `tab` key ([#1673](https://github.com/tailwindlabs/headlessui/pull/1673))
+- Resync input when display value changes ([#1679](https://github.com/tailwindlabs/headlessui/pull/1679), [#1755](https://github.com/tailwindlabs/headlessui/pull/1755))
+- Ensure controlled `Tabs` don't change automagically ([#1680](https://github.com/tailwindlabs/headlessui/pull/1680))
+- Don't scroll lock when a Transition + Dialog is mounted but hidden ([#1681](https://github.com/tailwindlabs/headlessui/pull/1681))
+- Allow `Popover` `close` to be passed directly to `onClick` handlers ([#1696](https://github.com/tailwindlabs/headlessui/pull/1696))
+- Improve outside click on Safari iOS ([#1712](https://github.com/tailwindlabs/headlessui/pull/1712))
+- Improve event handler merging ([#1715](https://github.com/tailwindlabs/headlessui/pull/1715))
+- Fix incorrect scrolling to the bottom when opening a `Dialog` ([#1716](https://github.com/tailwindlabs/headlessui/pull/1716))
+- Improve `Combobox` re-opening keyboard issue on mobile ([#1732](https://github.com/tailwindlabs/headlessui/pull/1732))
+- Ensure `Disclosure.Panel` is properly linked ([#1747](https://github.com/tailwindlabs/headlessui/pull/1747))
+- Only select the active option when using "singular" mode when pressing `<tab>` in the `Combobox` component ([#1750](https://github.com/tailwindlabs/headlessui/pull/1750))
+- Improve the types of the `Combobox` component ([#1761](https://github.com/tailwindlabs/headlessui/pull/1761))
+- Only restore focus to the `Menu.Button` if necessary when activating a `Menu.Option` ([#1782](https://github.com/tailwindlabs/headlessui/pull/1782))
+- Don't scroll when wrapping around in focus trap ([#1789](https://github.com/tailwindlabs/headlessui/pull/1789))
+- Fix `Transition` component's incorrect cleanup and order of events ([#1803](https://github.com/tailwindlabs/headlessui/pull/1803))
+- Ensure enter transitions work when using `unmount={false}` ([#1811](https://github.com/tailwindlabs/headlessui/pull/1811))
+- Improve accessibility when announcing `Listbox.Option` and `Combobox.Option` components ([#1812](https://github.com/tailwindlabs/headlessui/pull/1812))
+- Fix `ref` stealing from children ([#1820](https://github.com/tailwindlabs/headlessui/pull/1820))
+- Expose the `value` from the `Combobox` and `Listbox` components render prop ([#1822](https://github.com/tailwindlabs/headlessui/pull/1822))
+- Improve `scroll lock` on iOS ([#1824](https://github.com/tailwindlabs/headlessui/pull/1824))
+- Fix maximum call stack size exceeded error on `Tab` component when using `as={Fragment}` ([#1826](https://github.com/tailwindlabs/headlessui/pull/1826))
+- Fix "blank" screen on initial load of `Transition` component ([#1823](https://github.com/tailwindlabs/headlessui/pull/1823))
 
 ## [1.6.6] - 2022-07-07
 
@@ -302,10 +361,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Everything!
 
-[unreleased]: https://github.com/tailwindlabs/headlessui/compare/@headlessui/react@v1.6.6...HEAD
-[1.6.6]: https://github.com/tailwindlabs/headlessui/compare/@headlessui/react@v1.6.5...v1.6.6
-[1.6.5]: https://github.com/tailwindlabs/headlessui/compare/@headlessui/react@v1.6.4...v1.6.5
-[1.6.4]: https://github.com/tailwindlabs/headlessui/compare/@headlessui/react@v1.6.3...v1.6.4
+[unreleased]: https://github.com/tailwindlabs/headlessui/compare/@headlessui/react@v1.7.3...HEAD
+[1.7.3]: https://github.com/tailwindlabs/headlessui/compare/@headlessui/react@v1.7.2...@headlessui/react@v1.7.3
+[1.7.2]: https://github.com/tailwindlabs/headlessui/compare/@headlessui/react@v1.7.1...@headlessui/react@v1.7.2
+[1.7.1]: https://github.com/tailwindlabs/headlessui/compare/@headlessui/react@v1.7.0...@headlessui/react@v1.7.1
+[1.7.0]: https://github.com/tailwindlabs/headlessui/compare/@headlessui/react@v1.6.6...@headlessui/react@v1.7.0
+[1.6.6]: https://github.com/tailwindlabs/headlessui/compare/@headlessui/react@v1.6.5...@headlessui/react@v1.6.6
+[1.6.5]: https://github.com/tailwindlabs/headlessui/compare/@headlessui/react@v1.6.4...@headlessui/react@v1.6.5
+[1.6.4]: https://github.com/tailwindlabs/headlessui/compare/@headlessui/react@v1.6.3...@headlessui/react@v1.6.4
 [1.6.3]: https://github.com/tailwindlabs/headlessui/compare/@headlessui/react@v1.6.2...@headlessui/react@v1.6.3
 [1.6.2]: https://github.com/tailwindlabs/headlessui/compare/@headlessui/react@v1.6.1...@headlessui/react@v1.6.2
 [1.6.1]: https://github.com/tailwindlabs/headlessui/compare/@headlessui/react@v1.6.0...@headlessui/react@v1.6.1

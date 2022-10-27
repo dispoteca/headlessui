@@ -322,7 +322,7 @@ describe('Rendering', () => {
     })
   )
 
-  it.skip(
+  it(
     'should expose internal data as a render prop',
     suppressConsoleLogs(async () => {
       function Example() {
@@ -372,7 +372,7 @@ describe('Rendering', () => {
     })
   )
 
-  describe.skip('Equality', () => {
+  describe('Equality', () => {
     let options = [
       { id: 1, name: 'Alice' },
       { id: 2, name: 'Bob' },
@@ -400,6 +400,39 @@ describe('Rendering', () => {
         expect(bob).toHaveAttribute(
           'class',
           JSON.stringify({ checked: true, disabled: false, active: false })
+        )
+      })
+    )
+
+    it(
+      'should be possible to compare null values by a field',
+      suppressConsoleLogs(async () => {
+        render(
+          <RadioGroup value={null} onChange={console.log} by="id">
+            {options.map((option) => (
+              <RadioGroup.Option
+                key={option.id}
+                value={option}
+                className={(info) => JSON.stringify(info)}
+              >
+                {option.name}
+              </RadioGroup.Option>
+            ))}
+          </RadioGroup>
+        )
+
+        let [alice, bob, charlie] = getRadioGroupOptions()
+        expect(alice).toHaveAttribute(
+          'class',
+          JSON.stringify({ checked: false, disabled: false, active: false })
+        )
+        expect(bob).toHaveAttribute(
+          'class',
+          JSON.stringify({ checked: false, disabled: false, active: false })
+        )
+        expect(charlie).toHaveAttribute(
+          'class',
+          JSON.stringify({ checked: false, disabled: false, active: false })
         )
       })
     )
@@ -455,6 +488,116 @@ describe('Rendering', () => {
           'class',
           JSON.stringify({ checked: true, disabled: false, active: false })
         )
+      })
+    )
+  })
+
+  describe('Uncontrolled', () => {
+    it(
+      'should be possible to use in an uncontrolled way',
+      suppressConsoleLogs(async () => {
+        let handleSubmission = jest.fn()
+
+        render(
+          <form
+            onSubmit={(e) => {
+              e.preventDefault()
+              handleSubmission(Object.fromEntries(new FormData(e.target as HTMLFormElement)))
+            }}
+          >
+            <RadioGroup name="assignee">
+              <RadioGroup.Option value="alice">Alice</RadioGroup.Option>
+              <RadioGroup.Option value="bob">Bob</RadioGroup.Option>
+              <RadioGroup.Option value="charlie">Charlie</RadioGroup.Option>
+            </RadioGroup>
+            <button id="submit">submit</button>
+          </form>
+        )
+
+        await click(document.getElementById('submit'))
+
+        // No values
+        expect(handleSubmission).toHaveBeenLastCalledWith({})
+
+        // Choose alice
+        await click(getRadioGroupOptions()[0])
+
+        // Submit
+        await click(document.getElementById('submit'))
+
+        // Alice should be submitted
+        expect(handleSubmission).toHaveBeenLastCalledWith({ assignee: 'alice' })
+
+        // Choose charlie
+        await click(getRadioGroupOptions()[2])
+
+        // Submit
+        await click(document.getElementById('submit'))
+
+        // Charlie should be submitted
+        expect(handleSubmission).toHaveBeenLastCalledWith({ assignee: 'charlie' })
+      })
+    )
+
+    it(
+      'should be possible to provide a default value',
+      suppressConsoleLogs(async () => {
+        let handleSubmission = jest.fn()
+
+        render(
+          <form
+            onSubmit={(e) => {
+              e.preventDefault()
+              handleSubmission(Object.fromEntries(new FormData(e.target as HTMLFormElement)))
+            }}
+          >
+            <RadioGroup name="assignee" defaultValue="bob">
+              <RadioGroup.Option value="alice">Alice</RadioGroup.Option>
+              <RadioGroup.Option value="bob">Bob</RadioGroup.Option>
+              <RadioGroup.Option value="charlie">Charlie</RadioGroup.Option>
+            </RadioGroup>
+            <button id="submit">submit</button>
+          </form>
+        )
+
+        await click(document.getElementById('submit'))
+
+        // Bob is the defaultValue
+        expect(handleSubmission).toHaveBeenLastCalledWith({ assignee: 'bob' })
+
+        // Choose alice
+        await click(getRadioGroupOptions()[0])
+
+        // Submit
+        await click(document.getElementById('submit'))
+
+        // Alice should be submitted
+        expect(handleSubmission).toHaveBeenLastCalledWith({ assignee: 'alice' })
+      })
+    )
+
+    it(
+      'should still call the onChange listeners when choosing new values',
+      suppressConsoleLogs(async () => {
+        let handleChange = jest.fn()
+
+        render(
+          <RadioGroup name="assignee" onChange={handleChange}>
+            <RadioGroup.Option value="alice">Alice</RadioGroup.Option>
+            <RadioGroup.Option value="bob">Bob</RadioGroup.Option>
+            <RadioGroup.Option value="charlie">Charlie</RadioGroup.Option>
+          </RadioGroup>
+        )
+
+        // Choose alice
+        await click(getRadioGroupOptions()[0])
+
+        // Choose bob
+        await click(getRadioGroupOptions()[1])
+
+        // Change handler should have been called twice
+        expect(handleChange).toHaveBeenNthCalledWith(1, 'alice')
+        expect(handleChange).toHaveBeenNthCalledWith(2, 'bob')
       })
     )
   })

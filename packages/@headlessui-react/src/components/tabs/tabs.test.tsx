@@ -123,7 +123,101 @@ describe('Rendering', () => {
     })
   )
 
+  it(
+    'should guarantee the order when injecting new tabs dynamically',
+    suppressConsoleLogs(async () => {
+      function Example() {
+        let [tabs, setTabs] = useState<string[]>([])
+
+        return (
+          <Tab.Group>
+            <Tab.List>
+              {tabs.map((t, i) => (
+                <Tab key={t}>Tab {i + 1}</Tab>
+              ))}
+              <Tab>Insert new</Tab>
+            </Tab.List>
+            <Tab.Panels>
+              {tabs.map((t) => (
+                <Tab.Panel key={t}>{t}</Tab.Panel>
+              ))}
+              <Tab.Panel>
+                <button
+                  onClick={() => {
+                    setTabs((old) => [...old, `Panel ${old.length + 1}`])
+                  }}
+                >
+                  Insert
+                </button>
+              </Tab.Panel>
+            </Tab.Panels>
+          </Tab.Group>
+        )
+      }
+
+      render(<Example />)
+
+      assertTabs({ active: 0, tabContents: 'Insert new', panelContents: 'Insert' })
+
+      // Add some new tabs
+      await click(getByText('Insert'))
+
+      // We should still be on the tab we were on
+      assertTabs({ active: 1, tabContents: 'Insert new', panelContents: 'Insert' })
+    })
+  )
+
   describe('`renderProps`', () => {
+    it(
+      'should be possible to render using as={Fragment}',
+      suppressConsoleLogs(async () => {
+        render(
+          <Tab.Group>
+            <Tab.List>
+              <Tab as={React.Fragment}>
+                <button>Tab 1</button>
+              </Tab>
+              <Tab>Tab 2</Tab>
+              <Tab>Tab 3</Tab>
+            </Tab.List>
+
+            <Tab.Panels>
+              <Tab.Panel>Content 1</Tab.Panel>
+              <Tab.Panel>Content 2</Tab.Panel>
+              <Tab.Panel>Content 3</Tab.Panel>
+            </Tab.Panels>
+          </Tab.Group>
+        )
+
+        assertTabs({ active: 0, tabContents: 'Tab 1', panelContents: 'Content 1' })
+      })
+    )
+
+    it(
+      'should be possible to render using multiple as={Fragment}',
+      suppressConsoleLogs(async () => {
+        render(
+          <Tab.Group>
+            <Tab.List>
+              <Tab as={React.Fragment}>
+                <button>Tab 1</button>
+              </Tab>
+              <Tab as={React.Fragment}>
+                <button>Tab 2</button>
+              </Tab>
+            </Tab.List>
+
+            <Tab.Panels>
+              <Tab.Panel>Content 1</Tab.Panel>
+              <Tab.Panel>Content 2</Tab.Panel>
+            </Tab.Panels>
+          </Tab.Group>
+        )
+
+        assertTabs({ active: 0, tabContents: 'Tab 1', panelContents: 'Content 1' })
+      })
+    )
+
     it(
       'should expose the `selectedIndex` on the `Tab.Group` component',
       suppressConsoleLogs(async () => {
@@ -543,6 +637,64 @@ describe('Rendering', () => {
   })
 
   describe('`selectedIndex`', () => {
+    it(
+      'should not change the tab in a controlled component if you do not respond to the onChange',
+      suppressConsoleLogs(async () => {
+        let handleChange = jest.fn()
+
+        function ControlledTabs() {
+          let [selectedIndex, setSelectedIndex] = useState(0)
+
+          return (
+            <>
+              <Tab.Group
+                selectedIndex={selectedIndex}
+                onChange={(value) => {
+                  handleChange(value)
+                }}
+              >
+                <Tab.List>
+                  <Tab>Tab 1</Tab>
+                  <Tab>Tab 2</Tab>
+                  <Tab>Tab 3</Tab>
+                </Tab.List>
+
+                <Tab.Panels>
+                  <Tab.Panel>Content 1</Tab.Panel>
+                  <Tab.Panel>Content 2</Tab.Panel>
+                  <Tab.Panel>Content 3</Tab.Panel>
+                </Tab.Panels>
+              </Tab.Group>
+
+              <button>after</button>
+              <button onClick={() => setSelectedIndex((prev) => prev + 1)}>setSelectedIndex</button>
+            </>
+          )
+        }
+
+        render(<ControlledTabs />)
+
+        assertActiveElement(document.body)
+
+        // test controlled behaviour
+        await click(getByText('setSelectedIndex'))
+        assertTabs({ active: 1 })
+        await click(getByText('setSelectedIndex'))
+        assertTabs({ active: 2 })
+
+        // test uncontrolled behaviour again
+        await click(getByText('Tab 1'))
+        assertTabs({ active: 2 }) // Should still be Tab 3 because `selectedIndex` didn't update
+        await click(getByText('Tab 2'))
+        assertTabs({ active: 2 }) // Should still be Tab 3 because `selectedIndex` didn't update
+        await click(getByText('Tab 3'))
+        assertTabs({ active: 2 }) // Should still be Tab 3 because `selectedIndex` didn't update
+        await click(getByText('Tab 1'))
+        expect(handleChange).toHaveBeenCalledTimes(3) // We did see the 'onChange' calls, but only 3 because clicking Tab 3 is already the active one which means that this doesn't trigger the onChange
+        assertTabs({ active: 2 }) // Should still be Tab 3 because `selectedIndex` didn't update
+      })
+    )
+
     it(
       'should be possible to change active tab controlled and uncontrolled',
       suppressConsoleLogs(async () => {

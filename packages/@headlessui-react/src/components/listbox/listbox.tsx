@@ -37,6 +37,7 @@ import { Hidden, Features as HiddenFeatures } from '../../internal/hidden'
 import { objectToFormEntries } from '../../utils/form'
 import { getOwnerDocument } from '../../utils/owner'
 import { useEvent } from '../../hooks/use-event'
+import { useControllable } from '../../hooks/use-controllable'
 
 export enum ListboxStates {
   Open,
@@ -320,9 +321,10 @@ function stateReducer(state: ListboxStateDefinition, action: ListboxActions) {
 // ---
 
 let DEFAULT_LISTBOX_TAG = Fragment
-interface ListboxRenderPropArg {
+interface ListboxRenderPropArg<T> {
   open: boolean
   disabled: boolean
+  value: T
 }
 
 let ListboxRoot = forwardRefWithAs(function Listbox<
@@ -332,13 +334,14 @@ let ListboxRoot = forwardRefWithAs(function Listbox<
 >(
   props: Props<
     TTag,
-    ListboxRenderPropArg,
-    'value' | 'onChange' | 'disabled' | 'horizontal' | 'name' | 'multiple'
+    ListboxRenderPropArg<TType>,
+    'value' | 'defaultValue' | 'onChange' | 'by' | 'disabled' | 'horizontal' | 'name' | 'multiple'
   > & {
     autoFocus?: boolean
-    value: TType
-    onChange(value: TType): void
-    by?: (keyof TType & string) | ((a: TType, z: TType) => boolean)
+    value?: TType
+    defaultValue?: TType
+    onChange?(value: TType): void
+    by?: (keyof TActualType & string) | ((a: TActualType, z: TActualType) => boolean)
     onClose?(state: ListboxStateDefinition, dispatch: Dispatch<ListboxActions>): void
     disabled?: boolean
     horizontal?: boolean
@@ -349,9 +352,10 @@ let ListboxRoot = forwardRefWithAs(function Listbox<
 ) {
   let {
     autoFocus = true,
-    value,
+    value: controlledValue,
+    defaultValue,
     name,
-    onChange,
+    onChange: controlledOnChange,
     by = (a, z) => a === z,
     onClose,
     disabled = false,
@@ -361,6 +365,8 @@ let ListboxRoot = forwardRefWithAs(function Listbox<
   } = props
   const orientation = horizontal ? 'horizontal' : 'vertical'
   let listboxRef = useSyncRefs(ref)
+
+  let [value, onChange] = useControllable(controlledValue, controlledOnChange, defaultValue)
 
   let onCloseCallback = useEvent(
     (state: ListboxStateDefinition, dispatch: Dispatch<ListboxActions>) => {
@@ -379,9 +385,9 @@ let ListboxRoot = forwardRefWithAs(function Listbox<
         onClose: onCloseCallback,
         compare: useEvent(
           typeof by === 'string'
-            ? (a: TType, z: TType) => {
-                let property = by as unknown as keyof TType
-                return a[property] === z[property]
+            ? (a: TActualType, z: TActualType) => {
+                let property = by as unknown as keyof TActualType
+                return a?.[property] === z?.[property]
               }
             : by
         ),
@@ -400,10 +406,6 @@ let ListboxRoot = forwardRefWithAs(function Listbox<
   } as ListboxStateDefinition)
   let [{ listboxState, propsRef, optionsRef, buttonRef }, dispatch] = reducerBag
 
-  useIsoMorphicEffect(
-    () => dispatch({ type: ListboxActionTypes.SetAutoFocus, autoFocus }),
-    [autoFocus]
-  )
   propsRef.current.value = value
   propsRef.current.mode = multiple ? ValueMode.Multi : ValueMode.Single
 
@@ -416,7 +418,10 @@ let ListboxRoot = forwardRefWithAs(function Listbox<
         [ValueMode.Multi]() {
           let copy = (propsRef.current.value as TActualType[]).slice()
 
-          let idx = copy.indexOf(value as TActualType)
+          let { compare } = propsRef.current
+          let idx = copy.findIndex((item) =>
+            compare(item as unknown as TActualType, value as TActualType)
+          )
           if (idx === -1) {
             copy.push(value as TActualType)
           } else {
@@ -428,6 +433,10 @@ let ListboxRoot = forwardRefWithAs(function Listbox<
       })
     }
   }, [onChange, propsRef])
+  useIsoMorphicEffect(
+    () => dispatch({ type: ListboxActionTypes.SetAutoFocus, autoFocus }),
+    [autoFocus]
+  )
   useIsoMorphicEffect(() => {
     propsRef.current.onClose = onCloseCallback
   }, [onCloseCallback, propsRef])
@@ -454,9 +463,9 @@ let ListboxRoot = forwardRefWithAs(function Listbox<
     listboxState === ListboxStates.Open
   )
 
-  let slot = useMemo<ListboxRenderPropArg>(
-    () => ({ open: listboxState === ListboxStates.Open, disabled }),
-    [listboxState, disabled]
+  let slot = useMemo<ListboxRenderPropArg<TType>>(
+    () => ({ open: listboxState === ListboxStates.Open, disabled, value }),
+    [listboxState, disabled, value]
   )
 
   let ourProps = { ref: listboxRef }
@@ -497,6 +506,7 @@ let DEFAULT_BUTTON_TAG = 'button' as const
 interface ButtonRenderPropArg {
   open: boolean
   disabled: boolean
+  value: any
 }
 type ButtonPropsWeControl =
   | 'id'
@@ -573,7 +583,11 @@ let Button = forwardRefWithAs(function Button<TTag extends ElementType = typeof 
   }, [state.labelRef.current, id])
 
   let slot = useMemo<ButtonRenderPropArg>(
-    () => ({ open: state.listboxState === ListboxStates.Open, disabled: state.disabled }),
+    () => ({
+      open: state.listboxState === ListboxStates.Open,
+      disabled: state.disabled,
+      value: state.propsRef.current.value,
+    }),
     [state]
   )
   let theirProps = props
@@ -915,7 +929,7 @@ let Option = forwardRefWithAs(function Option<
     // According to the WAI-ARIA best practices, we should use aria-checked for
     // multi-select,but Voice-Over disagrees. So we use aria-checked instead for
     // both single and multi-select.
-    'aria-selected': selected === true ? true : undefined,
+    'aria-selected': selected,
     disabled: undefined, // Never forward the `disabled` prop
     onClick: handleClick,
     onFocus: handleFocus,

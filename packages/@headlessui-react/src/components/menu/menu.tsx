@@ -30,7 +30,14 @@ import { useId } from '../../hooks/use-id'
 import { Keys } from '../keyboard'
 import { Focus, calculateActiveIndex } from '../../utils/calculate-active-index'
 import { isDisabledReactIssue7711 } from '../../utils/bugs'
-import { isFocusableElement, FocusableMode, sortByDomNode } from '../../utils/focus-management'
+import {
+  isFocusableElement,
+  FocusableMode,
+  sortByDomNode,
+  Focus as FocusManagementFocus,
+  focusFrom,
+  restoreFocusIfNecessary,
+} from '../../utils/focus-management'
 import { useOutsideClick } from '../../hooks/use-outside-click'
 import { useTreeWalker } from '../../hooks/use-tree-walker'
 import { useOpenClosed, State, OpenClosedProvider } from '../../internal/open-closed'
@@ -251,11 +258,10 @@ let MenuRoot = forwardRefWithAs(function Menu<TTag extends ElementType = typeof 
   ref: Ref<HTMLElement>
 ) {
   let { onClose, shouldClose, ...theirProps } = props
-  let d = useDisposables()
 
   let onCloseCallback = useEvent((state: MenuStateDefinition, dispatch: Dispatch<MenuActions>) => {
     if (onClose != null) onClose(state, dispatch)
-    else d.nextFrame(() => state.buttonRef.current?.focus({ preventScroll: true }))
+    else restoreFocusIfNecessary(state.buttonRef.current)
   })
 
   let reducerBag = useReducer(stateReducer, {
@@ -541,6 +547,13 @@ let Items = forwardRefWithAs(function Items<TTag extends ElementType = typeof DE
       case Keys.Tab:
         event.preventDefault()
         event.stopPropagation()
+        dispatch({ type: MenuActionTypes.CloseMenu })
+        disposables().nextFrame(() => {
+          focusFrom(
+            state.buttonRef.current!,
+            event.shiftKey ? FocusManagementFocus.Previous : FocusManagementFocus.Next
+          )
+        })
         break
 
       default:

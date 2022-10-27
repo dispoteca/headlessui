@@ -17,6 +17,7 @@ import React, {
   MouseEvent as ReactMouseEvent,
   MutableRefObject,
   Ref,
+  MouseEventHandler,
 } from 'react'
 
 import { Props } from '../../types'
@@ -43,6 +44,8 @@ import { Hidden, Features as HiddenFeatures } from '../../internal/hidden'
 import { useEvent } from '../../hooks/use-event'
 import { useTabDirection, Direction as TabDirection } from '../../hooks/use-tab-direction'
 import { microTask } from '../../utils/micro-task'
+
+type MouseEvent<T> = Parameters<MouseEventHandler<T>>[0]
 
 enum PopoverStates {
   Open,
@@ -128,7 +131,9 @@ function usePopoverContext(component: string) {
 }
 
 let PopoverAPIContext = createContext<{
-  close(focusableElement?: HTMLElement | MutableRefObject<HTMLElement | null>): void
+  close(
+    focusableElement?: HTMLElement | MutableRefObject<HTMLElement | null> | MouseEvent<HTMLElement>
+  ): void
   isPortalled: boolean
 } | null>(null)
 PopoverAPIContext.displayName = 'PopoverAPIContext'
@@ -176,7 +181,9 @@ function stateReducer(state: StateDefinition, action: Actions) {
 let DEFAULT_POPOVER_TAG = 'div' as const
 interface PopoverRenderPropArg {
   open: boolean
-  close(focusableElement?: HTMLElement | MutableRefObject<HTMLElement | null>): void
+  close(
+    focusableElement?: HTMLElement | MutableRefObject<HTMLElement | null> | MouseEvent<HTMLElement>
+  ): void
 }
 
 let PopoverRoot = forwardRefWithAs(function Popover<
@@ -213,12 +220,34 @@ let PopoverRoot = forwardRefWithAs(function Popover<
     if (!button) return false
     if (!panel) return false
 
+    // We are part of a different "root" tree, so therefore we can consider it portalled. This is a
+    // heuristic because 3rd party tools could use some form of portal, typically rendered at the
+    // end of the body but we don't have an actual reference to that.
     for (let root of document.querySelectorAll('body > *')) {
       if (Number(root?.contains(button)) ^ Number(root?.contains(panel))) {
         return true
       }
     }
 
+    // Use another heuristic to try and calculate wether or not the focusable elements are near
+    // eachother (aka, following the default focus/tab order from the browser). If they are then it
+    // doesn't really matter if they are portalled or not because we can follow the default tab
+    // order. But if they are not, then we can consider it being portalled so that we can ensure
+    // that tab and shift+tab (hopefully) go to the correct spot.
+    let elements = getFocusableElements()
+    let buttonIdx = elements.indexOf(button)
+
+    let beforeIdx = (buttonIdx + elements.length - 1) % elements.length
+    let afterIdx = (buttonIdx + 1) % elements.length
+
+    let beforeElement = elements[beforeIdx]
+    let afterElement = elements[afterIdx]
+
+    if (!panel.contains(beforeElement) && !panel.contains(afterElement)) {
+      return true
+    }
+
+    // It may or may not be portalled, but we don't really know.
     return false
   }, [button, panel])
 
@@ -271,19 +300,27 @@ let PopoverRoot = forwardRefWithAs(function Popover<
     popoverState === PopoverStates.Open
   )
 
-  let close = useEvent((focusableElement?: HTMLElement | MutableRefObject<HTMLElement | null>) => {
-    dispatch({ type: ActionTypes.ClosePopover })
+  let close = useEvent(
+    (
+      focusableElement?:
+        | HTMLElement
+        | MutableRefObject<HTMLElement | null>
+        | MouseEvent<HTMLElement>
+    ) => {
+      dispatch({ type: ActionTypes.ClosePopover })
 
-    let restoreElement = (() => {
-      if (!focusableElement) return button
-      if (focusableElement instanceof HTMLElement) return focusableElement
-      if (focusableElement.current instanceof HTMLElement) return focusableElement.current
+      let restoreElement = (() => {
+        if (!focusableElement) return button
+        if (focusableElement instanceof HTMLElement) return focusableElement
+        if ('current' in focusableElement && focusableElement.current instanceof HTMLElement)
+          return focusableElement.current
 
-      return button
-    })()
+        return button
+      })()
 
-    restoreElement?.focus()
-  })
+      restoreElement?.focus()
+    }
+  )
 
   let api = useMemo<ContextType<typeof PopoverAPIContext>>(
     () => ({ close, isPortalled }),

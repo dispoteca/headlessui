@@ -8,7 +8,9 @@ import React, {
   // Types
   ContextType,
   ElementType,
+  FocusEvent as ReactFocusEvent,
   KeyboardEvent as ReactKeyboardEvent,
+  MouseEvent as ReactMouseEvent,
   MutableRefObject,
   Ref,
 } from 'react'
@@ -29,6 +31,8 @@ import { Hidden, Features as HiddenFeatures } from '../../internal/hidden'
 import { attemptSubmit, objectToFormEntries } from '../../utils/form'
 import { getOwnerDocument } from '../../utils/owner'
 import { useEvent } from '../../hooks/use-event'
+import { useControllable } from '../../hooks/use-controllable'
+import { isDisabledReactIssue7711 } from '../../utils/bugs'
 
 interface Option<T = unknown> {
   id: string
@@ -103,7 +107,9 @@ function stateReducer<T>(state: StateDefinition<T>, action: Actions) {
 // ---
 
 let DEFAULT_RADIO_GROUP_TAG = 'div' as const
-interface RadioGroupRenderPropArg {}
+interface RadioGroupRenderPropArg<TType> {
+  value: TType
+}
 type RadioGroupPropsWeControl = 'role' | 'aria-labelledby' | 'aria-describedby' | 'id'
 
 let RadioGroupRoot = forwardRefWithAs(function RadioGroup<
@@ -112,23 +118,32 @@ let RadioGroupRoot = forwardRefWithAs(function RadioGroup<
 >(
   props: Props<
     TTag,
-    RadioGroupRenderPropArg,
-    RadioGroupPropsWeControl | 'value' | 'onChange' | 'disabled' | 'name'
+    RadioGroupRenderPropArg<TType>,
+    RadioGroupPropsWeControl | 'value' | 'onChange' | 'disabled' | 'name' | 'by'
   > & {
-    value: TType
-    onChange(value: TType): void
+    value?: TType
+    defaultValue?: TType
+    onChange?(value: TType): void
     by?: (keyof TType & string) | ((a: TType, z: TType) => boolean)
     disabled?: boolean
     name?: string
   },
   ref: Ref<HTMLElement>
 ) {
-  let { value, name, onChange, by = (a, z) => a === z, disabled = false, ...theirProps } = props
+  let {
+    value: controlledValue,
+    defaultValue,
+    name,
+    onChange: controlledOnChange,
+    by = (a, z) => a === z,
+    disabled = false,
+    ...theirProps
+  } = props
   let compare = useEvent(
     typeof by === 'string'
       ? (a: TType, z: TType) => {
           let property = by as unknown as keyof TType
-          return a[property] === z[property]
+          return a?.[property] === z?.[property]
         }
       : by
   )
@@ -139,6 +154,8 @@ let RadioGroupRoot = forwardRefWithAs(function RadioGroup<
   let id = `headlessui-radiogroup-${useId()}`
   let internalRadioGroupRef = useRef<HTMLElement | null>(null)
   let radioGroupRef = useSyncRefs(internalRadioGroupRef, ref)
+
+  let [value, onChange] = useControllable(controlledValue, controlledOnChange, defaultValue)
 
   let firstOption = useMemo(
     () =>
@@ -161,7 +178,8 @@ let RadioGroupRoot = forwardRefWithAs(function RadioGroup<
     )?.propsRef.current
     if (nextOption?.disabled) return false
 
-    onChange(nextValue)
+    onChange?.(nextValue)
+
     return true
   })
 
@@ -266,6 +284,8 @@ let RadioGroupRoot = forwardRefWithAs(function RadioGroup<
     onKeyDown: handleKeyDown,
   }
 
+  let slot = useMemo<RadioGroupRenderPropArg<TType>>(() => ({ value }), [value])
+
   return (
     <DescriptionProvider name="RadioGroup.Description">
       <LabelProvider name="RadioGroup.Label">
@@ -290,6 +310,7 @@ let RadioGroupRoot = forwardRefWithAs(function RadioGroup<
           {render({
             ourProps,
             theirProps,
+            slot,
             defaultTag: DEFAULT_RADIO_GROUP_TAG,
             name: 'RadioGroup',
           })}
@@ -367,14 +388,19 @@ let Option = forwardRefWithAs(function Option<
     [id, registerOption, internalOptionRef, props]
   )
 
-  let handleClick = useEvent(() => {
+  let handleClick = useEvent((event: ReactMouseEvent) => {
+    if (isDisabledReactIssue7711(event.currentTarget)) return event.preventDefault()
     if (!change(value)) return
 
     addFlag(OptionState.Active)
     internalOptionRef.current?.focus()
   })
 
-  let handleFocus = useEvent(() => addFlag(OptionState.Active))
+  let handleFocus = useEvent((event: ReactFocusEvent) => {
+    if (isDisabledReactIssue7711(event.currentTarget)) return event.preventDefault()
+    addFlag(OptionState.Active)
+  })
+
   let handleBlur = useEvent(() => removeFlag(OptionState.Active))
 
   let isFirstOption = firstOption?.id === id
