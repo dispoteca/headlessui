@@ -23,6 +23,8 @@ import { useOwnerDocument } from '../../hooks/use-owner'
 import { microTask } from '../../utils/micro-task'
 import { isServer } from '../../utils/ssr'
 
+export const PORTAL_ROOT_ID = 'headlessui-portal-root'
+
 function usePortalTarget(ref: MutableRefObject<HTMLElement | null>): HTMLElement | null {
   let forceInRoot = usePortalRoot()
   let groupTarget = useContext(PortalGroupContext)
@@ -35,13 +37,13 @@ function usePortalTarget(ref: MutableRefObject<HTMLElement | null>): HTMLElement
 
     // No group context is used, let's create a default portal root
     if (isServer) return null
-    let existingRoot = ownerDocument?.getElementById('headlessui-portal-root')
+    let existingRoot = ownerDocument?.getElementById(PORTAL_ROOT_ID)
     if (existingRoot) return existingRoot
 
     if (ownerDocument === null) return null
 
     let root = ownerDocument.createElement('div')
-    root.setAttribute('id', 'headlessui-portal-root')
+    root.setAttribute('id', PORTAL_ROOT_ID)
     return ownerDocument.body.appendChild(root)
   })
 
