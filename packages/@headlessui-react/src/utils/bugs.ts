@@ -1,8 +1,8 @@
 // See: https://github.com/facebook/react/issues/7711
 // See: https://github.com/facebook/react/pull/20612
 // See: https://html.spec.whatwg.org/multipage/form-control-infrastructure.html#concept-fe-disabled (2.)
-export function isDisabledReactIssue7711(element: Element): boolean {
-  let parent = element.parentElement
+export function isDisabledReactIssue7711(element: Element | null): boolean {
+  let parent = element?.parentElement
   let legend = null
 
   while (parent && !(parent instanceof HTMLFieldSetElement)) {

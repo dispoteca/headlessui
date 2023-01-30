@@ -39,6 +39,7 @@
     "build-types": "tsc --emitDeclarationOnly --outDir ./dist",
     "copy-build": "copyfiles -u 1 ./build/* ./dist",
     "watch": "../../scripts/watch.sh --external:react --external:react-dom",
+    "watch-esm": "cross-env NODE_ENV=production esbuild ./src/index.ts --format=esm --outfile=./dist/headlessui.esm.js --bundle --platform=browser --sourcemap --target=es2020 --external:react --external:react-dom --watch",
     "test": "../../scripts/test.sh",
     "lint": "../../scripts/lint.sh",
     "playground": "yarn workspace playground-react dev",
