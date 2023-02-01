@@ -47,12 +47,12 @@ import { microTask } from '../../utils/micro-task'
 
 type MouseEvent<T> = Parameters<MouseEventHandler<T>>[0]
 
-enum PopoverStates {
+export enum PopoverStates {
   Open,
   Closed,
 }
 
-interface StateDefinition {
+export interface PopoverStateDefinition {
   popoverState: PopoverStates
 
   button: HTMLElement | null
@@ -64,7 +64,7 @@ interface StateDefinition {
   afterPanelSentinel: MutableRefObject<HTMLButtonElement | null>
 }
 
-enum ActionTypes {
+export enum PopoverActionTypes {
   TogglePopover,
   ClosePopover,
 
@@ -74,56 +74,56 @@ enum ActionTypes {
   SetPanelId,
 }
 
-type Actions =
-  | { type: ActionTypes.TogglePopover }
-  | { type: ActionTypes.ClosePopover }
-  | { type: ActionTypes.SetButton; button: HTMLElement | null }
-  | { type: ActionTypes.SetButtonId; buttonId: string }
-  | { type: ActionTypes.SetPanel; panel: HTMLElement | null }
-  | { type: ActionTypes.SetPanelId; panelId: string }
+export type PopoverActions =
+  | { type: PopoverActionTypes.TogglePopover }
+  | { type: PopoverActionTypes.ClosePopover }
+  | { type: PopoverActionTypes.SetButton; button: HTMLElement | null }
+  | { type: PopoverActionTypes.SetButtonId; buttonId: string }
+  | { type: PopoverActionTypes.SetPanel; panel: HTMLElement | null }
+  | { type: PopoverActionTypes.SetPanelId; panelId: string }
 
 let reducers: {
-  [P in ActionTypes]: (
-    state: StateDefinition,
-    action: Extract<Actions, { type: P }>
-  ) => StateDefinition
+  [P in PopoverActionTypes]: (
+    state: PopoverStateDefinition,
+    action: Extract<PopoverActions, { type: P }>
+  ) => PopoverStateDefinition
 } = {
-  [ActionTypes.TogglePopover]: (state) => ({
+  [PopoverActionTypes.TogglePopover]: (state) => ({
     ...state,
     popoverState: match(state.popoverState, {
       [PopoverStates.Open]: PopoverStates.Closed,
       [PopoverStates.Closed]: PopoverStates.Open,
     }),
   }),
-  [ActionTypes.ClosePopover](state) {
+  [PopoverActionTypes.ClosePopover](state) {
     if (state.popoverState === PopoverStates.Closed) return state
     return { ...state, popoverState: PopoverStates.Closed }
   },
-  [ActionTypes.SetButton](state, action) {
+  [PopoverActionTypes.SetButton](state, action) {
     if (state.button === action.button) return state
     return { ...state, button: action.button }
   },
-  [ActionTypes.SetButtonId](state, action) {
+  [PopoverActionTypes.SetButtonId](state, action) {
     if (state.buttonId === action.buttonId) return state
     return { ...state, buttonId: action.buttonId }
   },
-  [ActionTypes.SetPanel](state, action) {
+  [PopoverActionTypes.SetPanel](state, action) {
     if (state.panel === action.panel) return state
     return { ...state, panel: action.panel }
   },
-  [ActionTypes.SetPanelId](state, action) {
+  [PopoverActionTypes.SetPanelId](state, action) {
     if (state.panelId === action.panelId) return state
     return { ...state, panelId: action.panelId }
   },
 }
 
-let PopoverContext = createContext<[StateDefinition, Dispatch<Actions>] | null>(null)
+let PopoverContext = createContext<[PopoverStateDefinition, Dispatch<PopoverActions>] | null>(null)
 PopoverContext.displayName = 'PopoverContext'
 
-function usePopoverContext(component: string) {
+export function usePopoverContext(component?: string) {
   let context = useContext(PopoverContext)
   if (context === null) {
-    let err = new Error(`<${component} /> is missing a parent <Popover /> component.`)
+    let err = new Error(`<${component ?? 'Unknown'} /> is missing a parent <Popover /> component.`)
     if (Error.captureStackTrace) Error.captureStackTrace(err, usePopoverContext)
     throw err
   }
@@ -172,7 +172,7 @@ interface PopoverRegisterBag {
   panelId: string
   close(): void
 }
-function stateReducer(state: StateDefinition, action: Actions) {
+function stateReducer(state: PopoverStateDefinition, action: PopoverActions) {
   return match(action.type, reducers, state, action)
 }
 
@@ -207,14 +207,17 @@ let PopoverRoot = forwardRefWithAs(function Popover<
     panelId,
     beforePanelSentinel: createRef(),
     afterPanelSentinel: createRef(),
-  } as StateDefinition)
+  } as PopoverStateDefinition)
   let [{ popoverState, button, panel, beforePanelSentinel, afterPanelSentinel }, dispatch] =
     reducerBag
 
   let ownerDocument = useOwnerDocument(internalPopoverRef.current ?? button)
 
-  useEffect(() => dispatch({ type: ActionTypes.SetButtonId, buttonId }), [buttonId, dispatch])
-  useEffect(() => dispatch({ type: ActionTypes.SetPanelId, panelId }), [panelId, dispatch])
+  useEffect(
+    () => dispatch({ type: PopoverActionTypes.SetButtonId, buttonId }),
+    [buttonId, dispatch]
+  )
+  useEffect(() => dispatch({ type: PopoverActionTypes.SetPanelId, panelId }), [panelId, dispatch])
 
   let isPortalled = useMemo(() => {
     if (!button) return false
@@ -252,7 +255,7 @@ let PopoverRoot = forwardRefWithAs(function Popover<
   }, [button, panel])
 
   let registerBag = useMemo(
-    () => ({ buttonId, panelId, close: () => dispatch({ type: ActionTypes.ClosePopover }) }),
+    () => ({ buttonId, panelId, close: () => dispatch({ type: PopoverActionTypes.ClosePopover }) }),
     [buttonId, panelId, dispatch]
   )
 
@@ -281,7 +284,7 @@ let PopoverRoot = forwardRefWithAs(function Popover<
       if (beforePanelSentinel.current?.contains?.(event.target as HTMLElement)) return
       if (afterPanelSentinel.current?.contains?.(event.target as HTMLElement)) return
 
-      dispatch({ type: ActionTypes.ClosePopover })
+      dispatch({ type: PopoverActionTypes.ClosePopover })
     },
     true
   )
@@ -290,7 +293,7 @@ let PopoverRoot = forwardRefWithAs(function Popover<
   useOutsideClick(
     [button, panel],
     (event, target) => {
-      dispatch({ type: ActionTypes.ClosePopover })
+      dispatch({ type: PopoverActionTypes.ClosePopover })
 
       if (!isFocusableElement(target, FocusableMode.Loose)) {
         event.preventDefault()
@@ -307,7 +310,7 @@ let PopoverRoot = forwardRefWithAs(function Popover<
         | MutableRefObject<HTMLElement | null>
         | MouseEvent<HTMLElement>
     ) => {
-      dispatch({ type: ActionTypes.ClosePopover })
+      dispatch({ type: PopoverActionTypes.ClosePopover })
 
       let restoreElement = (() => {
         if (!focusableElement) return button
@@ -390,7 +393,7 @@ let Button = forwardRefWithAs(function Button<TTag extends ElementType = typeof 
   let buttonRef = useSyncRefs(
     internalButtonRef,
     ref,
-    isWithinPanel ? null : (button) => dispatch({ type: ActionTypes.SetButton, button })
+    isWithinPanel ? null : (button) => dispatch({ type: PopoverActionTypes.SetButton, button })
   )
   let withinPanelButtonRef = useSyncRefs(internalButtonRef, ref)
   let ownerDocument = useOwnerDocument(internalButtonRef)
@@ -404,7 +407,7 @@ let Button = forwardRefWithAs(function Button<TTag extends ElementType = typeof 
           event.preventDefault() // Prevent triggering a *click* event
           // @ts-expect-error
           event.target.click?.()
-          dispatch({ type: ActionTypes.ClosePopover })
+          dispatch({ type: PopoverActionTypes.ClosePopover })
           state.button?.focus() // Re-focus the original opening Button
           break
       }
@@ -415,7 +418,7 @@ let Button = forwardRefWithAs(function Button<TTag extends ElementType = typeof 
           event.preventDefault() // Prevent triggering a *click* event
           event.stopPropagation()
           if (state.popoverState === PopoverStates.Closed) closeOthers?.(state.buttonId)
-          dispatch({ type: ActionTypes.TogglePopover })
+          dispatch({ type: PopoverActionTypes.TogglePopover })
           break
 
         case Keys.Escape:
@@ -429,7 +432,7 @@ let Button = forwardRefWithAs(function Button<TTag extends ElementType = typeof 
           }
           event.preventDefault()
           event.stopPropagation()
-          dispatch({ type: ActionTypes.ClosePopover })
+          dispatch({ type: PopoverActionTypes.ClosePopover })
           break
       }
     }
@@ -449,13 +452,13 @@ let Button = forwardRefWithAs(function Button<TTag extends ElementType = typeof 
     if (isDisabledReactIssue7711(event.currentTarget)) return
     if (props.disabled) return
     if (isWithinPanel) {
-      dispatch({ type: ActionTypes.ClosePopover })
+      dispatch({ type: PopoverActionTypes.ClosePopover })
       state.button?.focus() // Re-focus the original opening Button
     } else {
       event.preventDefault()
       event.stopPropagation()
       if (state.popoverState === PopoverStates.Closed) closeOthers?.(state.buttonId)
-      dispatch({ type: ActionTypes.TogglePopover })
+      dispatch({ type: PopoverActionTypes.TogglePopover })
       state.button?.focus()
     }
   })
@@ -564,7 +567,7 @@ let Overlay = forwardRefWithAs(function Overlay<
 
   let handleClick = useEvent((event: ReactMouseEvent) => {
     if (isDisabledReactIssue7711(event.currentTarget)) return event.preventDefault()
-    dispatch({ type: ActionTypes.ClosePopover })
+    dispatch({ type: PopoverActionTypes.ClosePopover })
   })
 
   let slot = useMemo<OverlayRenderPropArg>(
@@ -619,7 +622,7 @@ let Panel = forwardRefWithAs(function Panel<TTag extends ElementType = typeof DE
 
   let internalPanelRef = useRef<HTMLDivElement | null>(null)
   let panelRef = useSyncRefs(internalPanelRef, ref, (panel) => {
-    dispatch({ type: ActionTypes.SetPanel, panel })
+    dispatch({ type: PopoverActionTypes.SetPanel, panel })
   })
   let ownerDocument = useOwnerDocument(internalPanelRef)
 
@@ -645,7 +648,7 @@ let Panel = forwardRefWithAs(function Panel<TTag extends ElementType = typeof DE
         }
         event.preventDefault()
         event.stopPropagation()
-        dispatch({ type: ActionTypes.ClosePopover })
+        dispatch({ type: PopoverActionTypes.ClosePopover })
         state.button?.focus()
         break
     }
@@ -656,7 +659,7 @@ let Panel = forwardRefWithAs(function Panel<TTag extends ElementType = typeof DE
     if (props.static) return
 
     if (state.popoverState === PopoverStates.Closed && (props.unmount ?? true)) {
-      dispatch({ type: ActionTypes.SetPanel, panel: null })
+      dispatch({ type: PopoverActionTypes.SetPanel, panel: null })
     }
   }, [state.popoverState, props.unmount, props.static, dispatch])
 
@@ -689,7 +692,7 @@ let Panel = forwardRefWithAs(function Panel<TTag extends ElementType = typeof DE
             if (!internalPanelRef.current) return
             if (internalPanelRef.current?.contains(el)) return
 
-            dispatch({ type: ActionTypes.ClosePopover })
+            dispatch({ type: PopoverActionTypes.ClosePopover })
 
             if (
               state.beforePanelSentinel.current?.contains?.(el) ||
