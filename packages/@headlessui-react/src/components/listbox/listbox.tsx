@@ -70,6 +70,7 @@ export interface ListboxStateDefinition {
     value: unknown
     onChange(value: unknown): void
     onClose(state: ListboxStateDefinition, dispatch: Dispatch<ListboxActions>): void
+    onOpen(state: ListboxStateDefinition): void
     mode: ValueMode
     compare(a: unknown, z: unknown): boolean
   }>
@@ -187,7 +188,9 @@ let reducers: {
       activeOptionIndex = optionIdx
     }
 
-    return { ...state, listboxState: ListboxStates.Open, activeOptionIndex }
+    state = { ...state, listboxState: ListboxStates.Open, activeOptionIndex }
+    state.propsRef.current.onOpen(state)
+    return state
   },
   [ListboxActionTypes.SetAutoFocus](state, action) {
     if (state.autoFocus === action.autoFocus) return state
@@ -343,6 +346,7 @@ let ListboxRoot = forwardRefWithAs(function Listbox<
     onChange?(value: TType): void
     by?: (keyof TActualType & string) | ((a: TActualType, z: TActualType) => boolean)
     onClose?(state: ListboxStateDefinition, dispatch: Dispatch<ListboxActions>): void
+    onOpen?(state: ListboxStateDefinition): void
     disabled?: boolean
     horizontal?: boolean
     name?: string
@@ -356,8 +360,9 @@ let ListboxRoot = forwardRefWithAs(function Listbox<
     defaultValue,
     name,
     onChange: controlledOnChange,
-    by = (a, z) => a === z,
+    by = (a: TActualType, z: TActualType) => a === z,
     onClose,
+    onOpen,
     disabled = false,
     horizontal = false,
     multiple = false,
@@ -375,6 +380,10 @@ let ListboxRoot = forwardRefWithAs(function Listbox<
     }
   )
 
+  let onOpenCallback = useEvent((state: ListboxStateDefinition) => {
+    if (onOpen != null) onOpen(state)
+  })
+
   let reducerBag = useReducer(stateReducer, {
     listboxState: ListboxStates.Closed,
     propsRef: {
@@ -383,6 +392,7 @@ let ListboxRoot = forwardRefWithAs(function Listbox<
         onChange,
         mode: multiple ? ValueMode.Multi : ValueMode.Single,
         onClose: onCloseCallback,
+        onOpen: onOpenCallback,
         compare: useEvent(
           typeof by === 'string'
             ? (a: TActualType, z: TActualType) => {
