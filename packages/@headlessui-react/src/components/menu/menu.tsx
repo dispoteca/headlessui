@@ -70,6 +70,7 @@ export interface MenuStateDefinition {
   items: { id: string; dataRef: MenuItemDataRef }[]
   propsRef: MutableRefObject<{
     onClose(state: MenuStateDefinition, dispatch: Dispatch<MenuActions>): void
+    onOpen(state: MenuStateDefinition): void
   }>
   searchQuery: string
   activeItemIndex: number | null
@@ -253,15 +254,20 @@ interface MenuRenderPropArg {
 let MenuRoot = forwardRefWithAs(function Menu<TTag extends ElementType = typeof DEFAULT_MENU_TAG>(
   props: Props<TTag, MenuRenderPropArg> & {
     onClose?: (state: MenuStateDefinition, dispatch: Dispatch<MenuActions>) => void
+    onOpen?: (state: MenuStateDefinition) => void
     shouldClose?: ShouldClose
   },
   ref: Ref<HTMLElement>
 ) {
-  let { onClose, shouldClose, ...theirProps } = props
+  let { onClose, onOpen, shouldClose, ...theirProps } = props
 
   let onCloseCallback = useEvent((state: MenuStateDefinition, dispatch: Dispatch<MenuActions>) => {
     if (onClose != null) onClose(state, dispatch)
     else restoreFocusIfNecessary(state.buttonRef.current)
+  })
+
+  let onOpenCallback = useEvent((state: MenuStateDefinition) => {
+    if (onOpen != null) onOpen(state)
   })
 
   let reducerBag = useReducer(stateReducer, {
@@ -269,7 +275,7 @@ let MenuRoot = forwardRefWithAs(function Menu<TTag extends ElementType = typeof 
     buttonRef: createRef(),
     itemsRef: createRef(),
     items: [],
-    propsRef: { current: { onClose: onCloseCallback } },
+    propsRef: { current: { onClose: onCloseCallback, onOpen: onOpenCallback } },
     searchQuery: '',
     activeItemIndex: null,
     activationTrigger: ActivationTrigger.Other,
@@ -363,14 +369,20 @@ let Button = forwardRefWithAs(function Button<TTag extends ElementType = typeof 
       case Keys.ArrowDown:
         event.preventDefault()
         event.stopPropagation()
-        dispatch({ type: MenuActionTypes.OpenMenu })
+        if (state.menuState !== MenuStates.Open) {
+          dispatch({ type: MenuActionTypes.OpenMenu })
+          state.propsRef.current.onOpen(state)
+        }
         d.nextFrame(() => dispatch({ type: MenuActionTypes.GoToItem, focus: Focus.First }))
         break
 
       case Keys.ArrowUp:
         event.preventDefault()
         event.stopPropagation()
-        dispatch({ type: MenuActionTypes.OpenMenu })
+        if (state.menuState !== MenuStates.Open) {
+          dispatch({ type: MenuActionTypes.OpenMenu })
+          state.propsRef.current.onOpen(state)
+        }
         d.nextFrame(() => dispatch({ type: MenuActionTypes.GoToItem, focus: Focus.Last }))
         break
     }
@@ -398,6 +410,7 @@ let Button = forwardRefWithAs(function Button<TTag extends ElementType = typeof 
     } else {
       event.preventDefault()
       dispatch({ type: MenuActionTypes.OpenMenu })
+      state.propsRef.current.onOpen(state)
     }
   })
 
